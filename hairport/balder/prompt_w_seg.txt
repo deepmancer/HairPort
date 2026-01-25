@@ -1,0 +1,1 @@
+This is a four-panel image grid: [TOP-LEFT] shows the segmentation mask of the original image (red = hair, green = skin/body); [TOP-RIGHT] shows the aligned bald segmentation. [BOTTOM-LEFT] is the original image with hair, and [BOTTOM-RIGHT] is its bald version, preserving identity, facial features, background, lighting, and camera style.

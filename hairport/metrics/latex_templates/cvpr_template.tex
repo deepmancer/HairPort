@@ -1,0 +1,507 @@
+% ============================================================================
+% Hair Transfer Evaluation - CVPR/ICCV/ECCV Template
+% ============================================================================
+% This template is designed for top-tier CV venues (CVPR, ICCV, ECCV)
+% ============================================================================
+
+\documentclass[11pt,letterpaper]{article}
+
+% ============================================================================
+% Conference-Specific Packages (uncomment one)
+% ============================================================================
+% For submission:
+% \usepackage{cvpr}              % Anonymous submission
+% For camera-ready:
+% \usepackage[final]{cvpr}       % Camera-ready with names
+
+% For standalone compilation (without conference package):
+\usepackage[margin=1in]{geometry}
+\usepackage{times}
+
+% ============================================================================
+% Core Packages
+% ============================================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{multicol}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{siunitx}
+\usepackage{enumitem}
+
+% Color definitions
+\definecolor{cvprblue}{RGB}{0,51,102}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=cvprblue,
+    citecolor=cvprblue,
+    urlcolor=cvprblue,
+}
+
+% ============================================================================
+% Custom Commands
+% ============================================================================
+% Table formatting
+\newcommand{\best}[1]{\textbf{#1}}
+\newcommand{\secondbest}[1]{\underline{#1}}
+\newcommand{\std}[1]{{\scriptsize$\pm$#1}}
+
+% Metric directions
+\newcommand{\up}{$\uparrow$}
+\newcommand{\down}{$\downarrow$}
+
+% Method name
+\newcommand{\methodname}{\textsc{HairPort}}
+
+% Metric abbreviations
+\newcommand{\dinoHair}{\text{DINO}_\text{hair}}
+\newcommand{\clipHair}{\text{CLIP}_\text{hair}}
+\newcommand{\ssimBg}{\text{SSIM}_\text{bg}}
+\newcommand{\psnrBg}{\text{PSNR}_\text{bg}}
+\newcommand{\lpipsBg}{\text{LPIPS}_\text{bg}}
+
+% ============================================================================
+% Title and Authors
+% ============================================================================
+\title{HairPort: 3D-Aware Hair Transfer with View-Consistent Rendering}
+
+\author{
+Anonymous Submission \\
+Paper ID: XXXX
+}
+% For camera-ready:
+% \author{
+%   First Author\inst{1} \and Second Author\inst{2} \and Third Author\inst{1,2}
+% }
+% \institute{
+%   Institution 1 \and
+%   Institution 2
+% }
+
+\date{}
+
+% ============================================================================
+% Document
+% ============================================================================
+\begin{document}
+
+\maketitle
+
+% ============================================================================
+% Abstract
+% ============================================================================
+\begin{abstract}
+Hair transfer aims to realistically transfer the hairstyle from a reference image to a source portrait while preserving the source identity. 
+Existing methods struggle with view consistency, identity preservation, and natural appearance at challenging angles.
+We present \methodname{}, a novel 3D-aware hair transfer framework that leverages...
+[Complete your abstract here]
+\end{abstract}
+
+% ============================================================================
+% Introduction
+% ============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Hair is a defining characteristic of personal appearance...
+
+% ============================================================================
+% Related Work
+% ============================================================================
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{GAN-Based Hair Transfer.}
+Early approaches~\cite{barbershop,hairfastgan} leverage StyleGAN's latent space...
+
+\paragraph{Diffusion-Based Methods.}
+Recent works~\cite{stablehair,hairfusion} employ diffusion models...
+
+% ============================================================================
+% Method
+% ============================================================================
+\section{Method}
+\label{sec:method}
+
+% Your method description here...
+
+% ============================================================================
+% Experiments
+% ============================================================================
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Experimental Setup}
+
+\paragraph{Dataset.}
+We evaluate on CelebA-HQ~\cite{karras2017progressive} following prior work~\cite{hairfastgan}.
+We construct X source-reference pairs covering diverse hairstyles...
+
+\paragraph{Baselines.}
+We compare with state-of-the-art methods:
+\textbf{GAN-based:} HairFastGAN~\cite{hairfastgan}, Barbershop~\cite{barbershop}, Style-Your-Hair~\cite{styleyourhair};
+\textbf{CLIP-guided:} HairCLIP~\cite{hairclip}, HairCLIPv2~\cite{hairclipv2};
+\textbf{Diffusion-based:} StableHair~\cite{stablehair}, HairFusion~\cite{hairfusion}.
+
+\paragraph{Evaluation Metrics.}
+We evaluate three aspects:
+\begin{itemize}[noitemsep,leftmargin=*]
+    \item \textbf{Hair Transfer Quality:} $\dinoHair$ and $\clipHair$ measure cosine similarity between DINOv2/CLIP features of reference and generated hair regions.
+    \item \textbf{Identity Preservation:} IDS using ArcFace~\cite{arcface} embeddings, CLIP-I for overall similarity.
+    \item \textbf{Image Quality:} FID~\cite{fid}, LPIPS~\cite{lpips}, SSIM, DreamSim~\cite{dreamsim}.
+\end{itemize}
+
+% ============================================================================
+% Main Results Table (Wide - Two Column)
+% ============================================================================
+\subsection{Quantitative Comparison}
+
+% Option 1: Include auto-generated tables from latex_builder.py
+% \input{tables/main_comparison.tex}
+
+% Option 2: Manual main comparison table
+\begin{table*}[t]
+\centering
+\caption{
+\textbf{Quantitative comparison with state-of-the-art hair transfer methods.}
+We report mean values across all test pairs.
+Best results are in \textbf{bold}, second-best are \underline{underlined}.
+\up{} = higher is better, \down{} = lower is better.
+}
+\label{tab:main_results}
+\vspace{-2mm}
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l cc cc cccc}
+\toprule
+\multirow{2}{*}{Method} & \multicolumn{2}{c}{Hair Transfer} & \multicolumn{2}{c}{Identity} & \multicolumn{4}{c}{Image Quality} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-9}
+& $\dinoHair$\up & $\clipHair$\up & IDS\up & CLIP-I\up & FID\down & LPIPS\down & SSIM\up & DreamSim\down \\
+\midrule
+% GAN-based methods
+HairFastGAN~\cite{hairfastgan} & 0.000 & 0.000 & 0.000 & 0.000 & 00.0 & 0.000 & 0.000 & 0.000 \\
+Barbershop~\cite{barbershop} & 0.000 & 0.000 & 0.000 & 0.000 & 00.0 & 0.000 & 0.000 & 0.000 \\
+Style-Your-Hair~\cite{styleyourhair} & 0.000 & 0.000 & 0.000 & 0.000 & 00.0 & 0.000 & 0.000 & 0.000 \\
+\midrule
+% CLIP-guided methods
+HairCLIP~\cite{hairclip} & 0.000 & 0.000 & 0.000 & 0.000 & 00.0 & 0.000 & 0.000 & 0.000 \\
+HairCLIPv2~\cite{hairclipv2} & \secondbest{0.000} & \secondbest{0.000} & 0.000 & 0.000 & 00.0 & 0.000 & 0.000 & 0.000 \\
+\midrule
+% Diffusion-based methods
+StableHair~\cite{stablehair} & 0.000 & 0.000 & \secondbest{0.000} & \secondbest{0.000} & \secondbest{00.0} & \secondbest{0.000} & \secondbest{0.000} & \secondbest{0.000} \\
+HairFusion~\cite{hairfusion} & 0.000 & 0.000 & 0.000 & 0.000 & 00.0 & 0.000 & 0.000 & 0.000 \\
+\midrule
+\rowcolor{gray!10}
+\textbf{\methodname{} (Ours)} & \best{0.000} & \best{0.000} & \best{0.000} & \best{0.000} & \best{00.0} & \best{0.000} & \best{0.000} & \best{0.000} \\
+\bottomrule
+\end{tabular}%
+}
+\vspace{-3mm}
+\end{table*}
+
+\Cref{tab:main_results} presents quantitative comparisons with baselines.
+Our method achieves the best performance on X out of Y metrics...
+
+% ============================================================================
+% Category-Specific Tables
+% ============================================================================
+\subsubsection{Hair Transfer Quality}
+
+\begin{table}[t]
+\centering
+\caption{
+\textbf{Hair Transfer Quality.}
+Metrics measuring similarity between reference and generated hair regions.
+$\dinoHair$ uses DINOv2 embeddings; $\clipHair$ uses CLIP embeddings.
+Best in \textbf{bold}, second-best \underline{underlined}.
+}
+\label{tab:hair_similarity}
+\small
+\begin{tabular}{l cc}
+\toprule
+Method & $\dinoHair$ \up & $\clipHair$ \up \\
+\midrule
+HairFastGAN & 0.000\std{0.00} & 0.000\std{0.00} \\
+StableHair & 0.000\std{0.00} & 0.000\std{0.00} \\
+HairCLIPv2 & \secondbest{0.000}\std{0.00} & \secondbest{0.000}\std{0.00} \\
+\midrule
+\textbf{Ours} & \best{0.000}\std{0.00} & \best{0.000}\std{0.00} \\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}
+\end{table}
+
+\subsubsection{Identity Preservation}
+
+\begin{table}[t]
+\centering
+\caption{
+\textbf{Face Identity Preservation.}
+IDS uses InsightFace embeddings; CLIP-I measures image-level similarity.
+Higher values indicate better identity preservation.
+Best in \textbf{bold}, second-best \underline{underlined}.
+}
+\label{tab:face_identity}
+\small
+\begin{tabular}{l cc}
+\toprule
+Method & IDS \up & CLIP-I \up \\
+\midrule
+HairFastGAN & 0.000\std{0.00} & 0.000 \\
+StableHair & \secondbest{0.000}\std{0.00} & \secondbest{0.000} \\
+HairCLIPv2 & 0.000\std{0.00} & 0.000 \\
+\midrule
+\textbf{Ours} & \best{0.000}\std{0.00} & \best{0.000} \\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}
+\end{table}
+
+\subsubsection{Non-Hair Region Preservation}
+
+\begin{table}[t]
+\centering
+\caption{
+\textbf{Non-Hair Region Preservation.}
+Metrics on background/face regions that should remain unchanged.
+$\ssimBg$/PSNR: higher is better; $\lpipsBg$: lower is better.
+Best in \textbf{bold}, second-best \underline{underlined}.
+}
+\label{tab:non_hair_preservation}
+\small
+\begin{tabular}{l ccc}
+\toprule
+Method & $\ssimBg$ \up & $\psnrBg$ \up & $\lpipsBg$ \down \\
+\midrule
+HairFastGAN & 0.000\std{0.00} & 00.0\std{0.0} & 0.000\std{0.00} \\
+StableHair & \secondbest{0.000}\std{0.00} & \secondbest{00.0}\std{0.0} & \secondbest{0.000}\std{0.00} \\
+HairCLIPv2 & 0.000\std{0.00} & 00.0\std{0.0} & 0.000\std{0.00} \\
+\midrule
+\textbf{Ours} & \best{0.000}\std{0.00} & \best{00.0}\std{0.0} & \best{0.000}\std{0.00} \\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}
+\end{table}
+
+\subsubsection{Full Image Quality}
+
+\begin{table}[t]
+\centering
+\caption{
+\textbf{Full Image Quality.}
+Metrics on the complete generated image.
+FID/LPIPS/DreamSim: lower is better; SSIM/PSNR: higher is better.
+Best in \textbf{bold}, second-best \underline{underlined}.
+}
+\label{tab:full_image}
+\small
+\begin{tabular}{l ccccc}
+\toprule
+Method & FID \down & LPIPS \down & SSIM \up & PSNR \up & DreamSim \down \\
+\midrule
+HairFastGAN & 00.0 & 0.000\std{0.00} & 0.000\std{0.00} & 00.0\std{0.0} & 0.000\std{0.00} \\
+StableHair & \secondbest{00.0} & \secondbest{0.000}\std{0.00} & \secondbest{0.000}\std{0.00} & \secondbest{00.0}\std{0.0} & \secondbest{0.000}\std{0.00} \\
+HairCLIPv2 & 00.0 & 0.000\std{0.00} & 0.000\std{0.00} & 00.0\std{0.0} & 0.000\std{0.00} \\
+\midrule
+\textbf{Ours} & \best{00.0} & \best{0.000}\std{0.00} & \best{0.000}\std{0.00} & \best{00.0}\std{0.0} & \best{0.000}\std{0.00} \\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}
+\end{table}
+
+% ============================================================================
+% Single-Column Compact Table (Alternative)
+% ============================================================================
+% Use this for a compact single-column table showing key metrics
+%
+% \begin{table}[t]
+% \centering
+% \caption{Compact comparison. Best in \textbf{bold}, second-best \underline{underlined}.}
+% \label{tab:compact}
+% \small
+% \setlength{\tabcolsep}{3pt}
+% \begin{tabular}{l cccc}
+% \toprule
+% Method & $\dinoHair$\up & IDS\up & FID\down & LPIPS\down \\
+% \midrule
+% HairFastGAN & 0.00 & 0.00 & 00.0 & 0.00 \\
+% StableHair & \secondbest{0.00} & \secondbest{0.00} & \secondbest{00.0} & \secondbest{0.00} \\
+% HairCLIPv2 & 0.00 & 0.00 & 00.0 & 0.00 \\
+% \midrule
+% \textbf{Ours} & \best{0.00} & \best{0.00} & \best{00.0} & \best{0.00} \\
+% \bottomrule
+% \end{tabular}
+% \vspace{-3mm}
+% \end{table}
+
+% ============================================================================
+% Qualitative Results
+% ============================================================================
+\subsection{Qualitative Results}
+
+\begin{figure*}[t]
+\centering
+% Replace with your actual figure
+% \includegraphics[width=\textwidth]{figures/qualitative_comparison.pdf}
+\fbox{\parbox{0.95\textwidth}{\centering\vspace{2cm}Qualitative Comparison Figure\vspace{2cm}}}
+\caption{
+\textbf{Qualitative comparison with baselines.}
+Each row shows a different source-reference pair.
+Our method produces more natural hair transfer while better preserving facial identity and handling challenging viewing angles.
+Zoom in for details.
+}
+\label{fig:qualitative}
+\vspace{-3mm}
+\end{figure*}
+
+\Cref{fig:qualitative} shows qualitative comparisons...
+
+% ============================================================================
+% Ablation Study
+% ============================================================================
+\subsection{Ablation Study}
+
+\begin{table}[t]
+\centering
+\caption{
+\textbf{Ablation study.}
+We analyze the contribution of each component.
+Best in \textbf{bold}.
+}
+\label{tab:ablation}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l ccc}
+\toprule
+Configuration & $\dinoHair$\up & IDS\up & FID\down \\
+\midrule
+w/o 3D hair modeling & 0.000 & 0.000 & 00.0 \\
+w/o view alignment & 0.000 & 0.000 & 00.0 \\
+w/o identity restoration & 0.000 & 0.000 & 00.0 \\
+w/o texture enhancement & 0.000 & 0.000 & 00.0 \\
+\midrule
+\textbf{Full model (Ours)} & \best{0.000} & \best{0.000} & \best{00.0} \\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}
+\end{table}
+
+% ============================================================================
+% User Study (Optional)
+% ============================================================================
+\subsection{User Study}
+
+We conduct a user study with N participants...
+
+\begin{table}[t]
+\centering
+\caption{\textbf{User study results.} Preference rates (\%) averaged across N participants.}
+\label{tab:user_study}
+\small
+\begin{tabular}{l ccc}
+\toprule
+vs. Method & Hair Quality & Identity & Overall \\
+\midrule
+vs. HairFastGAN & 00.0\% & 00.0\% & 00.0\% \\
+vs. StableHair & 00.0\% & 00.0\% & 00.0\% \\
+vs. HairCLIPv2 & 00.0\% & 00.0\% & 00.0\% \\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}
+\end{table}
+
+% ============================================================================
+% Conclusion
+% ============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented \methodname{}, a 3D-aware hair transfer framework...
+
+% ============================================================================
+% Supplementary Material Note
+% ============================================================================
+\paragraph{Supplementary Material.}
+Additional results, implementation details, and user study setup are provided in the supplementary material.
+
+% ============================================================================
+% References
+% ============================================================================
+{\small
+\bibliographystyle{ieee_fullname}
+% \bibliography{references}
+
+% Placeholder references
+\begin{thebibliography}{99}
+
+\bibitem{karras2017progressive}
+T.~Karras, T.~Aila, S.~Laine, and J.~Lehtinen.
+Progressive growing of {GANs} for improved quality, stability, and variation.
+In \emph{ICLR}, 2018.
+
+\bibitem{hairfastgan}
+HairFastGAN Authors.
+HairFastGAN: Realistic and robust hair transfer with a fast encoder-based approach.
+In \emph{ICCV}, 2023.
+
+\bibitem{stablehair}
+StableHair Authors.
+StableHair: Real-world hair transfer via diffusion model.
+In \emph{CVPR}, 2024.
+
+\bibitem{hairclip}
+HairCLIP Authors.
+HairCLIP: Design your hair by text and reference image.
+In \emph{CVPR}, 2022.
+
+\bibitem{hairclipv2}
+HairCLIPv2 Authors.
+HairCLIPv2: Unifying hair editing via proxy feature learning.
+In \emph{ICCV}, 2023.
+
+\bibitem{hairfusion}
+HairFusion Authors.
+HairFusion: Multi-modal hair transfer.
+In \emph{ECCV}, 2024.
+
+\bibitem{barbershop}
+Barbershop Authors.
+Barbershop: GAN-based image compositing using segmentation masks.
+\emph{TOG}, 2021.
+
+\bibitem{styleyourhair}
+Style-Your-Hair Authors.
+Style your hair: Latent optimization for pose-invariant hair transfer.
+In \emph{ECCV}, 2022.
+
+\bibitem{arcface}
+J.~Deng, J.~Guo, N.~Xue, and S.~Zafeiriou.
+ArcFace: Additive angular margin loss for deep face recognition.
+In \emph{CVPR}, 2019.
+
+\bibitem{fid}
+M.~Heusel, H.~Ramsauer, T.~Unterthiner, B.~Nessler, and S.~Hochreiter.
+GANs trained by a two time-scale update rule converge to a local Nash equilibrium.
+In \emph{NeurIPS}, 2017.
+
+\bibitem{lpips}
+R.~Zhang, P.~Isola, A.~A.~Efros, E.~Shechtman, and O.~Wang.
+The unreasonable effectiveness of deep features as a perceptual metric.
+In \emph{CVPR}, 2018.
+
+\bibitem{dreamsim}
+S.~Fu et~al.
+DreamSim: Learning new dimensions of human visual similarity.
+In \emph{NeurIPS}, 2023.
+
+\end{thebibliography}
+}
+
+\end{document}
