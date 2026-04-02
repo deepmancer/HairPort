@@ -112,8 +112,10 @@ def _save_intermediates(result, stem: str, out_dir: Path) -> None:
         Image.fromarray(result.hair_mask).save(out_dir / f"{stem}_hair_mask.png")
     if result.body_mask is not None:
         Image.fromarray(result.body_mask).save(out_dir / f"{stem}_body_mask.png")
-    if result.flux_input is not None:
-        result.flux_input.save(out_dir / f"{stem}_flux_input.png")
+    if result.flux_input_wo_seg is not None:
+        result.flux_input_wo_seg.save(out_dir / f"{stem}_flux_input_wo_seg.png")
+    if result.flux_input_w_seg is not None:
+        result.flux_input_w_seg.save(out_dir / f"{stem}_flux_input_w_seg.png")
     if result.foreground is not None:
         result.foreground.save(out_dir / f"{stem}_foreground.png")
     if result.flame_mask is not None:

@@ -122,9 +122,14 @@ class BaldifyStage:
                     guidance_scale=guidance_scale, strength=strength,
                 )
                 result.bald_image.save(output_path)
-                if result.flux_input is not None:
-                    flux_input_path = output_path.parent / f"{input_path.stem}_flux_input.png"
-                    result.flux_input.save(flux_input_path)
+                if result.flux_input_wo_seg is not None:
+                    result.flux_input_wo_seg.save(
+                        output_path.parent / f"{input_path.stem}_flux_input_wo_seg.png"
+                    )
+                if result.flux_input_w_seg is not None:
+                    result.flux_input_w_seg.save(
+                        output_path.parent / f"{input_path.stem}_flux_input_w_seg.png"
+                    )
                 return {"processed": 1, "skipped": 0, "failed": 0}
             except Exception as e:
                 logger.error(f"Failed: {e}")
@@ -135,9 +140,11 @@ class BaldifyStage:
             data_dir = Path(data_dir)
             input_dir = data_dir / "image"
             output_dir = data_dir / "bald" / bald_version / "image"
-            flux_input_dir = data_dir / "bald" / bald_version / "flux_input"
+            flux_input_wo_seg_dir = data_dir / "bald" / "wo_seg" / "flux_input"
+            flux_input_w_seg_dir = data_dir / "bald" / "w_seg" / "flux_input"
         else:
-            flux_input_dir = None
+            flux_input_wo_seg_dir = None
+            flux_input_w_seg_dir = None
 
         if not input_dir:
             raise ValueError("Provide data_dir, input_dir, or input_path")
@@ -147,9 +154,10 @@ class BaldifyStage:
             output_dir = input_dir.parent / f"{input_dir.name}_bald"
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        if flux_input_dir is not None:
-            flux_input_dir = Path(flux_input_dir)
-            flux_input_dir.mkdir(parents=True, exist_ok=True)
+        if flux_input_wo_seg_dir is not None:
+            flux_input_wo_seg_dir.mkdir(parents=True, exist_ok=True)
+        if flux_input_w_seg_dir is not None:
+            flux_input_w_seg_dir.mkdir(parents=True, exist_ok=True)
 
         images = sorted(p for p in input_dir.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
         logger.info(f"Found {len(images)} images in {input_dir}")
@@ -167,9 +175,13 @@ class BaldifyStage:
                     guidance_scale=guidance_scale, strength=strength,
                 )
                 result.bald_image.save(out_path)
-                if flux_input_dir is not None and result.flux_input is not None:
-                    result.flux_input.save(
-                        flux_input_dir / f"{img_path.stem}.png"
+                if flux_input_wo_seg_dir is not None and result.flux_input_wo_seg is not None:
+                    result.flux_input_wo_seg.save(
+                        flux_input_wo_seg_dir / f"{img_path.stem}.png"
+                    )
+                if flux_input_w_seg_dir is not None and result.flux_input_w_seg is not None:
+                    result.flux_input_w_seg.save(
+                        flux_input_w_seg_dir / f"{img_path.stem}.png"
                     )
                 stats["processed"] += 1
             except Exception as e:

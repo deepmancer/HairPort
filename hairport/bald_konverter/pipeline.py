@@ -54,14 +54,18 @@ class BaldResult:
     ----------
     bald_image : PIL.Image.Image
         The generated bald portrait.
+    bald_image_wo_seg : PIL.Image.Image | None
+        The intermediate wo_seg bald portrait (only in ``auto`` mode).
     hair_mask : np.ndarray | None
         Binary hair mask (only in ``w_seg`` / ``auto`` mode).
     body_mask : np.ndarray | None
         Binary body mask (only in ``w_seg`` / ``auto`` mode).
     segmentation_map : np.ndarray | None
         Segformer per-pixel labels (if ``return_intermediates=True``).
-    flux_input : PIL.Image.Image | None
-        The assembled grid fed to FLUX (if ``return_intermediates=True``).
+    flux_input_wo_seg : PIL.Image.Image | None
+        The 2-panel (1536×768) image fed to FLUX for wo_seg generation.
+    flux_input_w_seg : PIL.Image.Image | None
+        The 4-panel (1024×1024) grid fed to FLUX for w_seg generation.
     foreground : PIL.Image.Image | None
         RGBA foreground (if ``return_intermediates=True``).
     flame_mask : np.ndarray | None
@@ -69,10 +73,12 @@ class BaldResult:
     """
 
     bald_image: Image.Image
+    bald_image_wo_seg: Optional[Image.Image] = None
     hair_mask: Optional[np.ndarray] = None
     body_mask: Optional[np.ndarray] = None
     segmentation_map: Optional[np.ndarray] = None
-    flux_input: Optional[Image.Image] = None
+    flux_input_wo_seg: Optional[Image.Image] = None
+    flux_input_w_seg: Optional[Image.Image] = None
     foreground: Optional[Image.Image] = None
     flame_mask: Optional[np.ndarray] = None
 
@@ -356,7 +362,10 @@ class BaldKonverterPipeline:
         # ---- wo_seg only ----------------------------------------------------
         if self.mode == "wo_seg":
             bald, flux_input_wo = self._run_wo_seg(image, **gen_kwargs)
-            return BaldResult(bald_image=bald, flux_input=flux_input_wo)
+            return BaldResult(
+                bald_image=bald,
+                flux_input_wo_seg=flux_input_wo,
+            )
 
         # ---- w_seg or auto --------------------------------------------------
         # Step 1: initial bald via wo_seg
@@ -392,10 +401,12 @@ class BaldKonverterPipeline:
 
         return BaldResult(
             bald_image=bald_w,
+            bald_image_wo_seg=bald_wo,
             hair_mask=prep_result.hair_mask if return_intermediates else None,
             body_mask=body_mask if return_intermediates else None,
             segmentation_map=prep_result.segformer_labels if return_intermediates else None,
-            flux_input=grid,
+            flux_input_wo_seg=flux_input_wo,
+            flux_input_w_seg=grid,
             foreground=prep_result.foreground if return_intermediates else None,
             flame_mask=flame_mask if return_intermediates else None,
         )
