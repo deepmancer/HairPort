@@ -194,8 +194,15 @@ class BaldKonverterPipeline:
         num_inference_steps: int,
         guidance_scale: float,
         strength: float,
-    ) -> Image.Image:
-        """Two-panel generation (wo_seg)."""
+    ) -> tuple[Image.Image, Image.Image]:
+        """Two-panel generation (wo_seg).
+
+        Returns
+        -------
+        tuple[Image.Image, Image.Image]
+            ``(bald_image, flux_input)`` — the cropped bald result and the
+            assembled 2-panel image that was fed to FLUX.
+        """
         self._load_lora("wo_seg")
         pipe = self._get_base_pipe()
 
@@ -224,7 +231,7 @@ class BaldKonverterPipeline:
             generator=torch.Generator("cpu").manual_seed(seed),
         ).images[0]
 
-        return crop_right_half(output)
+        return crop_right_half(output), combined
 
     def _run_w_seg(
         self,
@@ -348,12 +355,12 @@ class BaldKonverterPipeline:
 
         # ---- wo_seg only ----------------------------------------------------
         if self.mode == "wo_seg":
-            bald = self._run_wo_seg(image, **gen_kwargs)
-            return BaldResult(bald_image=bald)
+            bald, flux_input_wo = self._run_wo_seg(image, **gen_kwargs)
+            return BaldResult(bald_image=bald, flux_input=flux_input_wo)
 
         # ---- w_seg or auto --------------------------------------------------
         # Step 1: initial bald via wo_seg
-        bald_wo = self._run_wo_seg(image, **gen_kwargs)
+        bald_wo, flux_input_wo = self._run_wo_seg(image, **gen_kwargs)
 
         # Step 2: preprocessing — hair mask from original image
         preproc = self._get_preprocessor()
@@ -387,9 +394,9 @@ class BaldKonverterPipeline:
             bald_image=bald_w,
             hair_mask=prep_result.hair_mask if return_intermediates else None,
             body_mask=body_mask if return_intermediates else None,
-            segmentation_map=prep_result.segformer_labels,
-            flux_input=grid if return_intermediates else None,
-            foreground=prep_result.foreground,
+            segmentation_map=prep_result.segformer_labels if return_intermediates else None,
+            flux_input=grid,
+            foreground=prep_result.foreground if return_intermediates else None,
             flame_mask=flame_mask if return_intermediates else None,
         )
 

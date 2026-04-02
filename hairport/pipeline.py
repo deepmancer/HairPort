@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
-
+import torch
 from hairport.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -364,13 +364,13 @@ def main(argv: list[str] | None = None):
         description="Run the HairPort hair transfer pipeline.",
     )
     parser.add_argument("--data_dir", type=str, default="outputs")
-    parser.add_argument("--shape_provider", type=str, default=None,
+    parser.add_argument("--shape_provider", type=str, default="hi3dgen",
                         choices=["hunyuan", "hi3dgen", "direct3d_s2"])
-    parser.add_argument("--texture_provider", type=str, default=None,
+    parser.add_argument("--texture_provider", type=str, default="mvadapter",
                         choices=["hunyuan", "mvadapter"])
-    parser.add_argument("--bald_version", type=str, default=None,
+    parser.add_argument("--bald_version", type=str, default="wo_seg",
                         choices=["wo_seg", "w_seg", "all"])
-    parser.add_argument("--device", type=str, default=None)
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--start", type=str, default=None,
                         help="First stage to execute")

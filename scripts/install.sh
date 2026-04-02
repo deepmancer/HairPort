@@ -85,7 +85,7 @@ pip install diffusers/ transformers/ \
     git+https://github.com/huggingface/peft \
     sentence-transformers
 
-MAX_JOBS=8 TORCH_CUDA_ARCH_LIST="9.0" pip install flash-attn --no-build-isolation
+# MAX_JOBS=8 TORCH_CUDA_ARCH_LIST="9.0" pip install flash-attn --no-build-isolation
 
 popd
 
@@ -95,16 +95,16 @@ popd
 pip install -e "${PACKAGES_DIR}/easy_dwpose"
 
 # ── BEN2, rembg, mediapipe ────────────────────────────────────────
-pip install git+https://github.com/PramaLLC/BEN2.git "rembg[gpu]"
+pip install git+https://github.com/PramaLLC/BEN2.git "rembg[gpu]" numpy==1.26.4
 
 # ── Chumpy (for SHeaP) ───────────────────────────────────────────────
 pip install chumpy --no-build-isolation                                                           
 
 # ── Jupyter ────────────────────────────────────────────────────────
-conda install -c conda-forge jupyter notebook jupyterlab \
-    nb_conda_kernels nb_conda ipykernel -y
-pip install jupyter_contrib_nbextensions
-jupyter contrib nbextension install --user
+# conda install -c conda-forge jupyter notebook jupyterlab \
+#     nb_conda_kernels nb_conda ipykernel -y
+# pip install jupyter_contrib_nbextensions
+# jupyter contrib nbextension install --user
 
 # ── PyTorch3D & nvdiffrast ────────────────────────────────────────
 pip install fvcore iopath
@@ -117,6 +117,7 @@ FORCE_CUDA=1 TORCH_CUDA_ARCH_LIST="9.0" \
 pip install bpy==4.0.0 --extra-index-url https://download.blender.org/pypi/
 pip install fake-bpy-module
 
+pip install omegaconf
 # ── Pin numpy last (some packages may override it) ────────────────
 pip install numpy==1.26.4
 
@@ -125,7 +126,7 @@ pip install numpy==1.26.4
 
 # ── Install HairPort itself ───────────────────────────────────────
 cd "${REPO_ROOT}"
-pip install -e .
+# pip install -e .
 
 echo ""
 echo "HairPort installation complete!"
