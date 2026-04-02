@@ -7,6 +7,9 @@
 #   bash scripts/setup_submodules.sh --pull  # pull latest on every repo
 set -euo pipefail
 
+eval "$(conda shell.bash hook)"
+
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODULES_DIR="${REPO_ROOT}/modules"
 PULL="${1:-}"
@@ -34,16 +37,41 @@ clone_or_update() {
 }
 
 # ── CodeFormer ──────────────────────────────────────────────────────
-clone_or_update "CodeFormer" "https://github.com/sczhou/CodeFormer.git"
+clone_or_update "CodeFormer" "git@github.com:deepmancer/CodeFormer.git"
 
 # ── MV-Adapter ─────────────────────────────────────────────────────
-clone_or_update "MV-Adapter" "https://github.com/huanngzh/MV-Adapter.git"
+clone_or_update "MV-Adapter" "git@github.com:deepmancer/MV-Adapter.git"
+# ── MV-Adapter downloads ───────────────────────────────────────────
+echo ">> Setting up MV-Adapter checkpoints..."
+mkdir -p "${MODULES_DIR}/MV-Adapter/checkpoints"
+[[ -f "${MODULES_DIR}/MV-Adapter/checkpoints/RealESRGAN_x2plus.pth" ]] || wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth -O "${MODULES_DIR}/MV-Adapter/checkpoints/RealESRGAN_x2plus.pth"
+[[ -f "${MODULES_DIR}/MV-Adapter/checkpoints/big-lama.pt" ]] || wget https://github.com/Sanster/models/releases/download/add_big_lama/big-lama.pt -O "${MODULES_DIR}/MV-Adapter/checkpoints/big-lama.pt"
+# ── MV-Adapter LoRAs ───────────────────────────────────────────────
+echo ">> Downloading MV-Adapter LoRAs..."
+cd "${MODULES_DIR}/MV-Adapter"
+if [[ ! -d "loras" ]]; then
+    [[ -f "loras.zip" ]] || gdown 1zmEPR-w7PFaboZLrJ6biT3Vy9YGUF8tg -O loras.zip
+    unzip -q loras.zip -d loras
+    rm -f loras.zip
+else
+    echo ">> MV-Adapter loras/ already exists, skipping."
+fi
+cd "${REPO_ROOT}"
+
 
 # ── Hi3DGen ────────────────────────────────────────────────────────
-clone_or_update "Hi3DGen" "https://github.com/Stable-X/Hi3DGen.git"
+clone_or_update "Hi3DGen" "git@github.com:deepmancer/Hi3DGen.git"
+cd "${MODULES_DIR}/Hi3DGen"
+rm -rf NiRNE 
+git clone git@github.com:lzt02/NiRNE.git
+conda activate hairport && python download_nirne_weights.py
+cd "${REPO_ROOT}"
 
 # ── SHeaP ──────────────────────────────────────────────────────────
-clone_or_update "SHeaP" "https://github.com/deepmancer/SHeaP.git"
+clone_or_update "SHeaP" "git@github.com:deepmancer/SHeaP.git"
+cd "${MODULES_DIR}/SHeaP"
+conda activate hairport && python convert_flame.py --flame_base_dir "${REPO_ROOT}/assets/"
+cd "${REPO_ROOT}"
 
 # ── Install editable packages where needed ─────────────────────────
 echo ""
