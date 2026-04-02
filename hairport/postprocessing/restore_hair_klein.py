@@ -19,10 +19,10 @@ from tqdm import tqdm
 from diffusers import Flux2KleinPipeline
 from rembg import remove, new_session
 
-from utils.sam_mask_extractor import SAMMaskExtractor
-# from utils.bg_remover import BackgroundRemover
+from hairport.core import SAMMaskExtractor
 from hairport.utility.uncrop_sdxl import Uncropper
 from easy_dwpose import DWposeDetector
+from hairport.config import get_config
 
 
 # ============================================================================
@@ -32,30 +32,30 @@ from easy_dwpose import DWposeDetector
 @dataclass
 class HairTransferKleinConfig:
     # Model settings
-    FLUX_KLEIN_MODEL: str = "black-forest-labs/FLUX.2-klein-9B"
+    FLUX_KLEIN_MODEL: str | None = None
     
     # Processing resolution
-    PROCESSING_RESOLUTION: int = 1024
-    OUTPUT_RESOLUTION: int = 1024
+    PROCESSING_RESOLUTION: int | None = None
+    OUTPUT_RESOLUTION: int | None = None
     
     # Generation parameters (optimized for distilled model)
-    SEED: int = 42
-    GUIDANCE_SCALE: float = 1.0  # Distilled model uses 1.0
-    NUM_INFERENCE_STEPS: int = 4  # Klein only needs 4 steps
+    SEED: int | None = None
+    GUIDANCE_SCALE: float | None = None
+    NUM_INFERENCE_STEPS: int | None = None
     
-    # Directory structure (matching restore_hair_new.py)
-    DIR_VIEW_ALIGNED: str = "view_aligned"
-    DIR_ALIGNMENT: str = "alignment"
-    DIR_BALD: str = "bald"
-    DIR_PROMPTS: str = "prompt"
+    # Directory structure
+    DIR_VIEW_ALIGNED: str | None = None
+    DIR_ALIGNMENT: str | None = None
+    DIR_BALD: str | None = None
+    DIR_PROMPTS: str | None = None
     
     # Top-level directories for 3D aware/unaware processing
-    DIR_3D_AWARE: str = "3d_aware"
-    DIR_3D_UNAWARE: str = "3d_unaware"
+    DIR_3D_AWARE: str | None = None
+    DIR_3D_UNAWARE: str | None = None
     
     # Subdirectories
-    SUBDIR_WARPING: str = "warping"
-    SUBDIR_TRANSFERRED: str = "transferred_klein"  # Different from restore_hair_new.py
+    SUBDIR_WARPING: str | None = None
+    SUBDIR_TRANSFERRED: str | None = None
     
     # Redux image source directories (in priority order)
     DIR_HAIR_ALIGNED_IMAGE: str = "image"
@@ -63,71 +63,108 @@ class HairTransferKleinConfig:
     DIR_IMAGE_OUTPAINTED: str = "image_outpainted"
     
     # File names
-    FILE_VIEW_ALIGNED_IMAGE: str = "target_image_phase_1.png"
-    FILE_VIEW_ALIGNED_MASK: str = "target_image_phase_1_mask.png"
+    FILE_VIEW_ALIGNED_IMAGE: str | None = None
+    FILE_VIEW_ALIGNED_MASK: str | None = None
 
     # Blending file (alternative to masked view-aligned)
-    SUBDIR_BLENDING: str = "blending"
-    FILE_POISSON_BLENDED: str = "poisson_blended.png"
+    SUBDIR_BLENDING: str | None = None
+    FILE_POISSON_BLENDED: str | None = None
     
     # Output file naming
-    FILE_HAIR_RESTORED: str = "hair_restored.png"
-    FILE_HAIR_RESTORED_MASK: str = "hair_restored_mask.png"
+    FILE_HAIR_RESTORED: str | None = None
+    FILE_HAIR_RESTORED_MASK: str | None = None
     
     # Source paths
-    DIR_SOURCE_OUTPAINTED: str = "source_outpainted"
+    DIR_SOURCE_OUTPAINTED: str | None = None
     FILE_OUTPAINTED_IMAGE: str = "outpainted_image.png"
-    SUBDIR_BALD_IMAGE: str = "image"
+    SUBDIR_BALD_IMAGE: str | None = None
     
     # Masking colors
-    BACKGROUND_COLOR: Tuple[int, int, int] = (255, 255, 255)  # White
-    NON_HAIR_FOREGROUND_COLOR: Tuple[int, int, int] = (200, 200, 200)  # Gray
+    BACKGROUND_COLOR: Tuple[int, int, int] | None = None
+    NON_HAIR_FOREGROUND_COLOR: Tuple[int, int, int] | None = None
     
     # Uncropping settings for 3D-aware mode
-    UNCROP_HAIR_THRESHOLD: float = 0.75  # Uncrop if hair bbox > 60% of resolution
-    UNCROP_BORDER_THRESHOLD: float = 0.025  # Uncrop if hair mask within 5% of any border
-    UNCROP_RESIZE_PERCENTAGE: float = 80.0  # Default resize percentage for uncropping
-    UNCROP_PROMPT: str = "high-quality photo of a bald person, high resolution, high quality, 4k, ultra-detailed"
+    UNCROP_HAIR_THRESHOLD: float | None = None
+    UNCROP_BORDER_THRESHOLD: float | None = None
+    UNCROP_RESIZE_PERCENTAGE: float | None = None
+    UNCROP_PROMPT: str | None = None
+
+    def __post_init__(self):
+        cfg = get_config()
+        th = cfg.transfer_hair
+        ds = cfg.dataset
+        if self.FLUX_KLEIN_MODEL is None:
+            self.FLUX_KLEIN_MODEL = cfg.models.flux_klein
+        if self.PROCESSING_RESOLUTION is None:
+            self.PROCESSING_RESOLUTION = th.processing_resolution
+        if self.OUTPUT_RESOLUTION is None:
+            self.OUTPUT_RESOLUTION = th.output_resolution
+        if self.SEED is None:
+            self.SEED = cfg.seed
+        if self.GUIDANCE_SCALE is None:
+            self.GUIDANCE_SCALE = th.guidance_scale
+        if self.NUM_INFERENCE_STEPS is None:
+            self.NUM_INFERENCE_STEPS = th.num_inference_steps
+        if self.DIR_VIEW_ALIGNED is None:
+            self.DIR_VIEW_ALIGNED = ds.dir_view_aligned
+        if self.DIR_ALIGNMENT is None:
+            self.DIR_ALIGNMENT = ds.subdir_alignment
+        if self.DIR_BALD is None:
+            self.DIR_BALD = ds.dir_bald
+        if self.DIR_PROMPTS is None:
+            self.DIR_PROMPTS = ds.dir_prompts
+        if self.DIR_3D_AWARE is None:
+            self.DIR_3D_AWARE = ds.dir_3d_aware
+        if self.DIR_3D_UNAWARE is None:
+            self.DIR_3D_UNAWARE = ds.dir_3d_unaware
+        if self.SUBDIR_WARPING is None:
+            self.SUBDIR_WARPING = ds.subdir_warping
+        if self.SUBDIR_TRANSFERRED is None:
+            self.SUBDIR_TRANSFERRED = ds.subdir_transferred
+        if self.FILE_VIEW_ALIGNED_IMAGE is None:
+            self.FILE_VIEW_ALIGNED_IMAGE = ds.file_target_phase1
+        if self.FILE_VIEW_ALIGNED_MASK is None:
+            self.FILE_VIEW_ALIGNED_MASK = ds.file_target_phase1_mask
+        if self.SUBDIR_BLENDING is None:
+            self.SUBDIR_BLENDING = ds.subdir_blending
+        if self.FILE_POISSON_BLENDED is None:
+            self.FILE_POISSON_BLENDED = ds.file_poisson_blended
+        if self.FILE_HAIR_RESTORED is None:
+            self.FILE_HAIR_RESTORED = ds.file_hair_restored
+        if self.FILE_HAIR_RESTORED_MASK is None:
+            self.FILE_HAIR_RESTORED_MASK = ds.file_hair_restored_mask
+        if self.DIR_SOURCE_OUTPAINTED is None:
+            self.DIR_SOURCE_OUTPAINTED = ds.dir_source_outpainted
+        if self.SUBDIR_BALD_IMAGE is None:
+            self.SUBDIR_BALD_IMAGE = ds.subdir_bald_image
+        if self.BACKGROUND_COLOR is None:
+            self.BACKGROUND_COLOR = tuple(th.bg_color)
+        if self.NON_HAIR_FOREGROUND_COLOR is None:
+            self.NON_HAIR_FOREGROUND_COLOR = tuple(th.non_hair_fg_color)
+        if self.UNCROP_HAIR_THRESHOLD is None:
+            self.UNCROP_HAIR_THRESHOLD = th.uncrop_hair_threshold
+        if self.UNCROP_BORDER_THRESHOLD is None:
+            self.UNCROP_BORDER_THRESHOLD = th.uncrop_border_threshold
+        if self.UNCROP_RESIZE_PERCENTAGE is None:
+            self.UNCROP_RESIZE_PERCENTAGE = th.uncrop_resize_percentage
+        if self.UNCROP_PROMPT is None:
+            self.UNCROP_PROMPT = cfg.prompts.transfer_uncrop
 
 
 # ============================================================================
 # Prompts
 # ============================================================================
 
-# 3D-Aware prompt (3 images: bald, view-aligned hair, original hair)
-PROMPT_3D_AWARE = (
-    f"Transfer only the hair onto the scalp of the bald person in image 1, as if they naturally had the same hairstyle as image 2. Avoid any bald patches or missing hair regions. "
-    f"Strictly preserve the bald person’s facial identity, body, and all non-hair regions from image 1, including the background, lighting, camera framing, and overall photographic appearance. "
-    f"Align the hairstyle from image 2 to match the head pose and head shape of the bald person in image 1. "
-    f"Match the hairstyle’s intrinsic attributes from image 2, including color, texture, and strand-level details. "
-    f"Use image 3 solely as a reference for estimating hair placement; do not copy any hair details from image 3. "
-    f"Remove any distortions or artifacts in the hair from, ensuring a natural and realistic blend onto the bald person’s scalp. "
-    f"Match the composited hair to image 1’s visual medium, lighting conditions, and resolution. "
-)
+# Prompts are read from centralized config at runtime via get_config().prompts.*
 
-PROMPT_3D_AWARE_WO_BALD = (
-    f"Completely remove and fully replace the existing hair of the person in image 1 with the hairstyle from image 2, as if the person naturally had that hairstyle. Do not retain, blend, or reference any of the original hair from image 1. "
-    f"Ensure full and continuous hair coverage, with no missing, thin, or incomplete regions. "
-    f"Strictly preserve the person’s facial identity, body, and all non-hair regions from image 1, including the background, lighting, camera framing, and overall photographic appearance. "
-    f"Align the hairstyle from image 2 to precisely match the head pose and head shape of the person in image 1. "
-    f"Match the hairstyle’s intrinsic attributes from image 2, including color, texture, volume, and strand-level details. "
-    f"Use image 3 solely as a reference for estimating hair placement; do not copy or transfer any hair details from image 3. "
-    f"Remove any distortions, seams, or artifacts introduced during the hair replacement, ensuring a natural and realistic integration with the head and scalp. "
-    f"Match the replaced hair to image 1’s visual medium, lighting conditions, and resolution. "
-)
+def _prompt_3d_aware():
+    return get_config().prompts.transfer_3d_aware
 
+def _prompt_3d_aware_wo_bald():
+    return get_config().prompts.transfer_3d_aware_wo_bald
 
-
-# 3D-Unaware prompt (2 images: bald, original hair reference)
-PROMPT_3D_UNAWARE = (
-    f"Transfer only the hairstyle from the reference subject in image 2 onto the scalp of the bald person in image 1. "
-    f"Align the hair to the head pose and orientation of the bald person in image 1. "
-    f"Strictly keep unchanged the bald person’s facial identity, body, and all non-hair areas of image 1, including background, lighting, camera/framing, and overall photographic rendering. "
-    f"Replicate the hair from image 2, including texture, color, shape, length, volume, hairline, parting, or intericate and fine-grained details (strand-level details and variations if existing) "
-    f"Preserve the apparent hair length and volume, brow-to-hairline relative distance, and matching relative placement, proportions, and orientation to facial/body keypoints and head/body pose, as it is in the reference image. "
-    # f"Seamlessly blend and harmonize the hair onto the person in image 1 with physically consistent shading, lighting, and interaction with the scalp and face. "
-    f"Match the added hair to image 1's visual medium, lighting conditions, and resolution. "
-)
+def _prompt_3d_unaware():
+    return get_config().prompts.transfer_3d_unaware
 
 # ============================================================================
 # Utility Functions
@@ -617,11 +654,11 @@ class HairTransferKleinPipeline:
                 )
             # img1_bald = Image.open("/workspace/outputs/image/side10.png").convert("RGB").resize(target_size, Image.Resampling.LANCZOS)
             image_list = [img1_bald, img_view_aligned, img_reference]
-            prompt = PROMPT_3D_AWARE
+            prompt = _prompt_3d_aware()
             print(f"  Passing 3 images to FLUX Klein")
         else:
             image_list = [img1_bald, img_reference]
-            prompt = PROMPT_3D_UNAWARE
+            prompt = _prompt_3d_unaware()
             print(f"  Passing 2 images to FLUX Klein")
         if output_dir is not None:
             os.makedirs(output_dir, exist_ok=True)
@@ -986,7 +1023,7 @@ def main():
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="/workspace/outputs",
+        default="outputs",
         help="Root data directory"
     )
     parser.add_argument(

@@ -1,0 +1,381 @@
+# ==========================================================================
+# HairPort — Default Configuration
+# ==========================================================================
+# All hardcoded values are centralized here.  Override per-run by passing
+# a second YAML file or CLI dot-list flags, e.g.:
+#   hairport --set device=cpu --set baldify.seed=123
+#
+# OmegaConf interpolation is available:  ${paths.assets_dir}  etc.
+# ==========================================================================
+
+# ---- Global defaults ----
+device: cuda
+seed: 42
+
+# ---- Filesystem paths (relative to repo root unless absolute) ----
+paths:
+  assets_dir: assets
+  modules_dir: modules
+  output_dir: outputs
+  flame_dir: ${paths.assets_dir}/flame/FLAME2020
+  codeformer_module: ${paths.modules_dir}/CodeFormer
+  codeformer_weights: ${paths.assets_dir}/weights/codeformer
+  mv_adapter_module: ${paths.modules_dir}/MV-Adapter
+  sheap_module: ${paths.modules_dir}/SHeaP
+  hi3dgen_module: ${paths.modules_dir}/Hi3DGen
+  mediapipe_flame_embedding: ${paths.assets_dir}/body_models/landmarks/flame/mediapipe_landmark_embedding.npz
+
+# ---- Model IDs / HuggingFace references ----
+models:
+  # Diffusion models
+  flux_klein: black-forest-labs/FLUX.2-klein-9B
+  flux_kontext: black-forest-labs/FLUX.1-Kontext-dev
+  realvis_v4: SG161222/RealVisXL_V4.0
+  realvis_v5_lightning: SG161222/RealVisXL_V5.0_Lightning
+  sdxl_vae: madebyollin/sdxl-vae-fp16-fix
+  controlnet_union: xinsir/controlnet-union-sdxl-1.0
+  # MV-Adapter
+  mv_adapter: huanngzh/mv-adapter
+  mv_adapter_weight: mvadapter_ig2mv_sdxl.safetensors
+  # Segmentation / detection
+  sam: facebook/sam3.1
+  sam_bald_konverter: facebook/sam3
+  ben2: PramaLLC/BEN2
+  face_parser: jonathandinu/face-parsing
+  # VL / captioning
+  captioner: Qwen/Qwen3-VL-8B-Instruct
+  qwen_image_edit: Qwen/Qwen-Image-Edit
+  qwen_lightning_lora: lightx2v/Qwen-Image-Lightning
+  qwen_lightning_lora_weight: Qwen-Image-Lightning-8steps-V1.1.safetensors
+  # Bald konverter LoRAs
+  bald_konverter_repo: deepmancer/bald_konverter
+  bald_lora_wo_seg: bald_konvertor_wo_seg_000003400.safetensors
+  bald_lora_w_seg: bald_konvertor_w_seg_000004900.safetensors
+  # FLAME
+  flame_model: generic_model.pt
+  # Enhancement LoRA
+  lora_detail_xl: add-detail-xl.safetensors
+  # Background removal session
+  rembg_session: birefnet-general
+
+# ---- SAM (Segment Anything) ----
+sam:
+  confidence_threshold: 0.35
+  detection_threshold: 0.4
+  hair_confidence_threshold: 0.25
+
+# ---- Background removal ----
+bg_removal:
+  alpha_threshold: 0.8
+
+# ---- FLAME head model ----
+flame:
+  model_type: expressive
+  detection_confidence: 0.5
+  padding_ratio: 0.1
+
+# ---- CodeFormer super-resolution ----
+codeformer:
+  face_size: 512
+  upscale: 2
+  bg_tile: 100
+  bg_tile_pad: 10
+
+# ---- Facial landmarks (MediaPipe) ----
+facial_landmarks:
+  detection_confidence: 0.5
+  fallback_confidences:
+    - 0.3
+    - 0.2
+    - 0.1
+  min_face_size: 64
+  target_face_size: 256
+
+# ---- Per-stage configuration ----
+
+baldify:
+  mode: auto
+  guidance_scale: 1.0
+  num_inference_steps: 35
+  strength: 1.0
+  seed: ${seed}
+  dtype: bfloat16
+  wo_seg_image_size: 768
+  w_seg_image_size: 1024
+
+caption:
+  resize_percentage: 30
+  num_inference_steps: 8
+  max_sequence_length: 512
+  overlap_percentage: 5
+  true_cfg_scale: 1.0
+  height: 1024
+  width: 1024
+
+shape_mesh:
+  target_faces: 150000
+  quality_threshold: 0.8
+  extra_tex_coord_weight: 4.0
+  min_size_mb: 20.0
+  frontalize_min_size_mb: 25.0
+
+landmark_3d:
+  ortho_scale: 1.1
+  num_perturbations: 4
+  angle_range: 0.15
+  trans_range: 0.05
+  resolution: 1024
+  optimize: true
+  super_resolution: true
+  codeformer_fidelity: 0.0
+  codeformer_upscale: 2
+  default_cam_location: [0.0, -1.45, 0.0]
+  default_cam_rotation: [1.5708, 0.0, 0.0]
+
+align_view:
+  angle_threshold_3d_lift: 10.0
+  render_resolution: 1024
+
+render_view:
+  num_views: 6
+  num_inference_steps: 50
+  guidance_scale: 3.0
+  reference_conditioning_scale: 1.0
+  control_conditioning_scale: 1.0
+  height: 1024
+  width: 1024
+  dtype: float16
+  lora_dir: loras
+  lora_files:
+    - add-detail-xl.safetensors
+  lora_scales:
+    - 0.8
+  ortho_scale_offset: 0.2
+  camera_near: 0.1
+  camera_far: 100.0
+
+enhance_view:
+  num_inference_steps: 4
+  guidance_scale: 1.0
+  height: 1024
+  width: 1024
+  max_image_size: 1024
+  bg_color: [255, 255, 255]
+  padding_ratio: 0.05
+
+blend_hair:
+  resolution: 1024
+  optimization_resolution: 1024
+  codeformer_upscale: 2
+  codeformer_fidelity: 0.5
+  alignment_iou_weight: 1.0
+  alignment_landmark_weight: 1.0
+  sam_confidence_threshold: 0.4
+  poisson_blend_strength: 0.5
+  dilation_size: 15
+  blur_size: 2
+  gaussian_sigma: 21
+  feather_px: 12
+  mask_threshold: 0.5
+
+transfer_hair:
+  guidance_scale: 1.0
+  num_inference_steps: 4
+  processing_resolution: 1024
+  output_resolution: 1024
+  seed: ${seed}
+  bg_color: [255, 255, 255]
+  non_hair_fg_color: [200, 200, 200]
+  uncrop_hair_threshold: 0.75
+  uncrop_border_threshold: 0.025
+  uncrop_resize_percentage: 80.0
+
+# ---- Uncrop (SDXL-based outpainting) ----
+uncrop:
+  width: 1024
+  height: 1024
+  overlap_percentage: 5
+  num_inference_steps: 12
+  default_resize_percentage: 75.0
+  blend_pixels: 21
+  face_to_width_ratio: 0.45
+  min_resize_percentage: 30.0
+  max_resize_percentage: 100.0
+  dtype: float16
+
+# ---- Blender / rendering ----
+rendering:
+  engine: CYCLES
+  cycles_samples: 512
+  adaptive_threshold: 0.01
+  adaptive_min_samples: 64
+  tile_size: 256
+  max_bounces: 12
+  diffuse_bounces: 4
+  glossy_bounces: 4
+  transmission_bounces: 12
+  volume_bounces: 0
+  preview_samples: 32
+  resolution_percentage: 100
+  default_camera_location: [0.0, -1.2, 1.82]
+  default_camera_rotation_deg: [90.0, 0.0, 0.0]
+  default_ortho_scale: 1.0
+
+rendering_fit_lmk:
+  cycles_samples: 256
+
+# ---- Dataset directory / file naming conventions ----
+dataset:
+  provider_pattern: "shape_{shape}__texture_{texture}"
+  dir_image: image
+  dir_matted_image: matted_image
+  dir_landmarks: lmk
+  dir_landmarks_3d: lmk_3d
+  dir_pixel3dmm: pixel3dmm_output
+  dir_view_aligned: view_aligned
+  dir_source_outpainted: source_outpainted
+  dir_bald: bald
+  dir_prompts: prompt
+  dir_3d_aware: 3d_aware
+  dir_3d_unaware: 3d_unaware
+  subdir_warping: warping
+  subdir_blending: blending
+  subdir_transferred: transferred_klein
+  subdir_alignment: alignment
+  subdir_bald_image: image
+  subdir_bald_lmk: lmk
+  file_head_orientation: head_orientation.json
+  file_landmarks: landmarks.npy
+  file_vertex_indices: vertex_indices.npy
+  file_textured_mesh: postprocessed_textured_mesh.glb
+  file_shape_mesh: shape_mesh.glb
+  file_aligned_mesh: aligned_target_mesh.glb
+  file_camera_params: camera_params.json
+  file_enhanced_render: source_alignment.png
+  file_hair_restored: hair_restored.png
+  file_hair_restored_mask: hair_restored_mask.png
+  file_poisson_blended: poisson_blended.png
+  file_target_phase1: target_image_phase_1.png
+  file_target_phase1_mask: target_image_phase_1_mask.png
+
+# ---- Pipeline defaults ----
+pipeline:
+  shape_provider: hi3dgen
+  texture_provider: mvadapter
+  bald_version: w_seg
+
+# ---- Prompt strings ----
+prompts:
+  baldify_wo_seg: >-
+    Two-panel image: [LEFT] is the original source. Generate [RIGHT] as
+    the same subject but bald, preserving identity, facial features,
+    clothing, background, lighting, and camera style.
+  baldify_w_seg: >-
+    This is a four-panel image grid: [TOP-LEFT] shows the segmentation
+    mask of the original image (red = hair, green = skin/body); [TOP-RIGHT]
+    shows the aligned bald segmentation. [BOTTOM-LEFT] is the original
+    image with hair, and [BOTTOM-RIGHT] is its bald version, preserving
+    identity, facial features, background, lighting, and camera style.
+  enhance_first_phase: >-
+    Enhance only the details and texture of this image of a person.
+    Improve the realism and quality of the hair, and make it more
+    detailed with strand-level texture. Make the hair well-defined and
+    well-distinguished from the background. Remove any artifacts or
+    distortions along the hairline and hair boundaries (gray artifacts),
+    ensuring a sharp focus. Preserve the exact head pose, body pose,
+    camera angle, perspective, and original framing without alteration.
+  enhance_second_phase: >-
+    Enhance and edit Image 1, using Image 2 strictly as a reference for
+    identity matching (facial identity and hair identity). Image 2
+    depicts the same person as Image 1, shown from a different angle.
+    Rigidly preserve Image 1's exact head and body pose, hair silhouette,
+    camera angle, framing, and overall composition. Do not replicate,
+    adapt, or borrow the pose or composition from Image 2. Use Image 2
+    solely to refine facial features and hair texture so they more
+    accurately match the subject's identity, while fully maintaining
+    Image 1's original pose and framing. Remove any visual artifacts or
+    noise and output a high-quality, ultra-detailed final image. Ensure
+    the hair is well-defined, with strand texture closely matching the
+    subject's appearance as shown in Image 2.
+  transfer_3d_aware: >-
+    Transfer only the hair onto the scalp of the bald person in image 1,
+    as if they naturally had the same hairstyle as image 2. Avoid any
+    bald patches or missing hair regions. Strictly preserve the bald
+    person's facial identity, body, and all non-hair regions from
+    image 1, including the background, lighting, camera framing, and
+    overall photographic appearance. Align the hairstyle from image 2 to
+    match the head pose and head shape of the bald person in image 1.
+    Match the hairstyle's intrinsic attributes from image 2, including
+    color, texture, and strand-level details. Use image 3 solely as a
+    reference for estimating hair placement; do not copy any hair details
+    from image 3. Remove any distortions or artifacts in the hair,
+    ensuring a natural and realistic blend onto the bald person's scalp.
+    Match the composited hair to image 1's visual medium, lighting
+    conditions, and resolution.
+  transfer_3d_aware_wo_bald: >-
+    Completely remove and fully replace the existing hair of the person
+    in image 1 with the hairstyle from image 2, as if the person
+    naturally had that hairstyle. Do not retain, blend, or reference any
+    of the original hair from image 1. Ensure full and continuous hair
+    coverage, with no missing, thin, or incomplete regions. Strictly
+    preserve the person's facial identity, body, and all non-hair
+    regions from image 1, including the background, lighting, camera
+    framing, and overall photographic appearance. Align the hairstyle
+    from image 2 to precisely match the head pose and head shape of the
+    person in image 1. Match the hairstyle's intrinsic attributes from
+    image 2, including color, texture, volume, and strand-level details.
+    Use image 3 solely as a reference for estimating hair placement; do
+    not copy or transfer any hair details from image 3. Remove any
+    distortions, seams, or artifacts introduced during the hair
+    replacement, ensuring a natural and realistic integration with the
+    head and scalp. Match the replaced hair to image 1's visual medium,
+    lighting conditions, and resolution.
+  transfer_3d_unaware: >-
+    Transfer only the hairstyle from the reference subject in image 2
+    onto the scalp of the bald person in image 1. Align the hair to the
+    head pose and orientation of the bald person in image 1. Strictly
+    keep unchanged the bald person's facial identity, body, and all
+    non-hair areas of image 1, including background, lighting,
+    camera/framing, and overall photographic rendering. Replicate the
+    hair from image 2, including texture, color, shape, length, volume,
+    hairline, parting, or intricate and fine-grained details (strand-level
+    details and variations if existing). Preserve the apparent hair
+    length and volume, brow-to-hairline relative distance, and matching
+    relative placement, proportions, and orientation to facial/body
+    keypoints and head/body pose, as it is in the reference image. Match
+    the added hair to image 1's visual medium, lighting conditions, and
+    resolution.
+  transfer_uncrop: >-
+    high-quality photo of a bald person, high resolution, high quality,
+    4k, ultra-detailed
+  caption_outpaint: >-
+    Replace the white margins with coherent content that matches the
+    existing image. Preserve the identity of the person and do not alter
+    the inner content.
+  uncrop_default: >-
+    high-quality photo of a person, realistic, high quality, 4k,
+    ultra-detailed
+  uncrop_negative: >-
+    (cgi, 3d, grayscale, render, monochrome, sketch, pixelated, blurry,
+    low quality, naked, nude, nudity, ugly drawing:1.8), face asymmetry,
+    eyes asymmetry, deformed eyes, open mouth, text, cropped, out of
+    frame, worst quality, low quality, jpeg artifacts, ugly, duplicate,
+    morbid, mutilated, extra fingers, mutated hands, poorly drawn hands,
+    poorly drawn face, mutation, deformed, blurry, dehydrated, bad
+    anatomy, bad proportions, extra limbs, cloned face, disfigured,
+    gross proportions, malformed limbs, missing arms, missing legs, extra
+    arms, extra legs, fused fingers, too many fingers, long neck,
+    underexposed, harsh shadows, dramatic lighting, vignette, color cast,
+    oversaturated, undersaturated
+  render_view_negative: >-
+    (cgi, 3d, grayscale, render, monochrome, sketch, pixelated, blurry,
+    naked, nude, nudity, ugly drawing:1.8), face asymmetry, eyes
+    asymmetry, deformed eyes, open mouth, text, cropped, out of frame,
+    worst quality, low quality, jpeg artifacts, ugly, duplicate, morbid,
+    mutilated, extra fingers, mutated hands, poorly drawn hands, poorly
+    drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, bad
+    proportions, extra limbs, cloned face, disfigured, gross proportions,
+    malformed limbs, missing arms, missing legs, extra arms, extra legs,
+    fused fingers, too many fingers, long neck, underexposed, harsh
+    shadows, dramatic lighting, vignette, color cast, oversaturated,
+    undersaturated

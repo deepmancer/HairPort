@@ -19,40 +19,75 @@ from scipy.spatial.transform import Rotation as R
 
 from hairport.utility.blender_rendering import render_mesh
 from hairport.utility.estimate_camera import align_landmarks, convert_camera_cv_to_blender
-from utils.bg_remover import BackgroundRemover
-from utils.facial_landmark_detector import FacialLandmarkDetector
+from hairport.core import BackgroundRemover, FacialLandmarkDetector
 from hairport.utility.uncrop_sdxl.uncrop_sdxl import Uncropper
+from hairport.config import get_config
 
 @dataclass
 class Config:
     # Angle threshold for determining if 3D lifting is needed (in degrees)
-    ANGLE_THRESHOLD_FOR_3D_LIFT: float = 10.0
+    ANGLE_THRESHOLD_FOR_3D_LIFT: float | None = None
     
     # Rendering settings
-    RENDER_RESOLUTION: int = 1024
+    RENDER_RESOLUTION: int | None = None
     
     # Directory structure
-
-    DIR_MATTED_IMAGE: str = "matted_image"
-    DIR_FLAME: str = "pixel3dmm_output"
-    DIR_LANDMARKS: str = "lmk"
-    DIR_LANDMARKS_3D: str = "lmk_3d"
-    DIR_VIEW_ALIGNED: str = "view_aligned"
-    DIR_SRC_OUTPAINTED: str = "source_outpainted"
-    DIR_PROMPTS: str = "prompt"
+    DIR_MATTED_IMAGE: str | None = None
+    DIR_FLAME: str | None = None
+    DIR_LANDMARKS: str | None = None
+    DIR_LANDMARKS_3D: str | None = None
+    DIR_VIEW_ALIGNED: str | None = None
+    DIR_SRC_OUTPAINTED: str | None = None
+    DIR_PROMPTS: str | None = None
 
     # File names
-    FILE_HEAD_ORIENTATION: str = "head_orientation.json"
-    FILE_LANDMARKS: str = "landmarks.npy"
-    FILE_VERTEX_INDICES: str = "vertex_indices.npy"
-    FILE_TEXTURED_MESH: str = "postprocessed_textured_mesh.glb"
-    FILE_ALIGNED_MESH: str = "aligned_target_mesh.glb"
-    FILE_CAMERA_PARAMS: str = "camera_params.json"
-    FILE_ENHANCED_RENDER: str = "source_alignment.png"
+    FILE_HEAD_ORIENTATION: str | None = None
+    FILE_LANDMARKS: str | None = None
+    FILE_VERTEX_INDICES: str | None = None
+    FILE_TEXTURED_MESH: str | None = None
+    FILE_ALIGNED_MESH: str | None = None
+    FILE_CAMERA_PARAMS: str | None = None
+    FILE_ENHANCED_RENDER: str | None = None
 
     # ID filters
     EXCLUDED_ID_PREFIXES: tuple = ()
-    # ("sample_", "side", "n")
+
+    def __post_init__(self):
+        cfg = get_config()
+        av = cfg.align_view
+        ds = cfg.dataset
+        if self.ANGLE_THRESHOLD_FOR_3D_LIFT is None:
+            self.ANGLE_THRESHOLD_FOR_3D_LIFT = av.angle_threshold_3d_lift
+        if self.RENDER_RESOLUTION is None:
+            self.RENDER_RESOLUTION = av.render_resolution
+        if self.DIR_MATTED_IMAGE is None:
+            self.DIR_MATTED_IMAGE = ds.dir_matted_image
+        if self.DIR_FLAME is None:
+            self.DIR_FLAME = ds.dir_pixel3dmm
+        if self.DIR_LANDMARKS is None:
+            self.DIR_LANDMARKS = ds.dir_landmarks
+        if self.DIR_LANDMARKS_3D is None:
+            self.DIR_LANDMARKS_3D = ds.dir_landmarks_3d
+        if self.DIR_VIEW_ALIGNED is None:
+            self.DIR_VIEW_ALIGNED = ds.dir_view_aligned
+        if self.DIR_SRC_OUTPAINTED is None:
+            self.DIR_SRC_OUTPAINTED = ds.dir_source_outpainted
+        if self.DIR_PROMPTS is None:
+            self.DIR_PROMPTS = ds.dir_prompts
+        if self.FILE_HEAD_ORIENTATION is None:
+            self.FILE_HEAD_ORIENTATION = ds.file_head_orientation
+        if self.FILE_LANDMARKS is None:
+            self.FILE_LANDMARKS = ds.file_landmarks
+        if self.FILE_VERTEX_INDICES is None:
+            self.FILE_VERTEX_INDICES = ds.file_vertex_indices
+        if self.FILE_TEXTURED_MESH is None:
+            self.FILE_TEXTURED_MESH = ds.file_textured_mesh
+        if self.FILE_ALIGNED_MESH is None:
+            self.FILE_ALIGNED_MESH = ds.file_aligned_mesh
+        if self.FILE_CAMERA_PARAMS is None:
+            self.FILE_CAMERA_PARAMS = ds.file_camera_params
+        if self.FILE_ENHANCED_RENDER is None:
+            self.FILE_ENHANCED_RENDER = ds.file_enhanced_render
 
 def compute_euler_angle_difference(euler1, euler2, seq='xyz'):
     rot1 = R.from_euler(seq, euler1)
@@ -474,7 +509,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="/workspace/outputs/",
+        default="outputs/",
     )
     parser.add_argument(
         "--shape_provider", default="hi3dgen", type=str, choices=["hunyuan", "hi3dgen", "direct3d_s2"]

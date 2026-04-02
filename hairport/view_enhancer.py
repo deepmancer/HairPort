@@ -26,46 +26,20 @@ import torch
 from PIL import Image
 
 from diffusers import Flux2KleinPipeline
-from rembg import remove, new_session
 
-class BackgroundRemover:
-    def __init__(self, device: str | torch.device = 'cuda'):
-        self.device = torch.device(device)
-        self._session = new_session("birefnet-general")
-    
-    def remove_background(self, image: Image.Image, refine_foreground: bool = False) -> tuple[Image.Image, Image.Image]:
-        foreground = remove(image, session=self._session)
-        alpha = foreground.getchannel('A')
-        mask = ((np.array(alpha) / 255.0) > 0.8).astype(np.uint8) * 255
-        return foreground, Image.fromarray(mask)
+from hairport.core.bg_remover import BackgroundRemover
+from hairport.config import get_config
 
 # ============================================================================
-# Configuration
+# Configuration — reads from centralized config at call time
 # ============================================================================
 
-FLUX_KLEIN_REPO_ID = "black-forest-labs/FLUX.2-klein-9B"  # Distilled version
-DEFAULT_NUM_INFERENCE_STEPS = 4
-DEFAULT_GUIDANCE_SCALE = 1.0  # Distilled model uses guidance_scale=1.0
-DEFAULT_HEIGHT = 1024
-DEFAULT_WIDTH = 1024
-MAX_IMAGE_SIZE = 1024
+def _bg_color() -> tuple:
+    """Background color from config (lazy)."""
+    return tuple(get_config().enhance_view.bg_color)
+
+# Keep a module-level name for static analysis; runtime call-sites use _bg_color().
 BG_COLOR = (255, 255, 255)
-
-# ============================================================================
-# Enhancement Prompts
-# ============================================================================
-
-FIRST_PHASE_PROMPT = """
-Enhance only the details and texture of this image of a person. Improve the realism and quality of the hair, and make it more detailed with strand-level texture. Make the hair well-defined and well-distinguished from the background.
-Remove any artifacts or distortions along the hairline and hair boundaries (gray artifacts), ensuring  a sharp focus. Preserve the exact head pose, body pose, camera angle, perspective, and original framing without alteration.
-"""
-
-SECOND_PHASE_PROMPT = """
-Enhance and edit Image 1, using Image 2 strictly as a reference for identity matching (facial identity and hair identity). Image 2 depicts the same person as Image 1, shown from a different angle.
-Rigidly preserve Image 1’s exact head and body pose, hair silhouette, camera angle, framing, and overall composition.
-Do not replicate, adapt, or borrow the pose or composition from Image 2. Use Image 2 solely to refine facial features and hair texture so they more accurately match the subject’s identity, while fully maintaining Image 1’s original pose and framing.
-Remove any visual artifacts or noise and output a high-quality, ultra-detailed final image. Ensure the hair is well-defined, with strand texture closely matching the subject’s appearance as shown in Image 2.
-"""
 
 # ============================================================================
 # Utility Functions
@@ -103,7 +77,7 @@ def apply_white_background(image: Image.Image, mask: Image.Image = None) -> Imag
             rgba_image.putalpha(mask_l)
     
     # Create white background
-    white_bg = Image.new("RGBA", rgba_image.size, (*BG_COLOR, 255))
+    white_bg = Image.new("RGBA", rgba_image.size, (*_bg_color(), 255))
     
     # Composite image onto white background
     result = Image.alpha_composite(white_bg, rgba_image)
@@ -152,7 +126,7 @@ def preprocess_image_with_matting(
 
 def compute_output_dimensions(
     image: Image.Image,
-    max_size: int = MAX_IMAGE_SIZE,
+    max_size: int | None = None,
 ) -> Tuple[int, int]:
     """
     Compute output dimensions maintaining aspect ratio with both sides as multiples of 8.
@@ -164,6 +138,8 @@ def compute_output_dimensions(
     Returns:
         Tuple of (width, height)
     """
+    if max_size is None:
+        max_size = get_config().enhance_view.max_image_size
     img_width, img_height = image.size
     aspect_ratio = img_width / img_height
     
@@ -273,7 +249,7 @@ def crop_and_center_foreground(
     resized_fg = cropped_fg.resize((scaled_fg_width, scaled_fg_height), Image.Resampling.LANCZOS)
     
     # Create white background canvas and paste centered foreground
-    canvas = Image.new("RGB", target_size, BG_COLOR)
+    canvas = Image.new("RGB", target_size, _bg_color())
     canvas.paste(resized_fg, (paste_x, paste_y))
     
     # Store crop info for later uncropping
@@ -331,7 +307,7 @@ def uncrop_to_original(
     )
     
     # Create output image with white background
-    output = Image.new("RGB", (original_width, original_height), BG_COLOR)
+    output = Image.new("RGB", (original_width, original_height), _bg_color())
     
     # Calculate paste position in original space (may be negative or extend beyond bounds)
     paste_orig_x = int(round(canvas_origin_in_orig_x))
@@ -366,8 +342,8 @@ class ViewEnhancer:
     
     def __init__(
         self,
-        model_id: str = FLUX_KLEIN_REPO_ID,
-        device: str = "cuda",
+        model_id: str | None = None,
+        device: str | None = None,
         dtype: torch.dtype = torch.bfloat16,
         load_pipeline: bool = True,
     ):
@@ -380,8 +356,9 @@ class ViewEnhancer:
             dtype: Data type for model weights
             load_pipeline: Whether to load the pipeline immediately
         """
-        self.model_id = model_id
-        self.device = device
+        cfg = get_config()
+        self.model_id = model_id or cfg.models.flux_klein
+        self.device = device or cfg.device
         self.dtype = dtype
         self.pipe = None
         self.bg_remover = None
@@ -404,8 +381,8 @@ class ViewEnhancer:
         self,
         generated_image: Union[str, Path, Image.Image],
         prompt: Optional[str] = None,
-        num_inference_steps: int = DEFAULT_NUM_INFERENCE_STEPS,
-        guidance_scale: float = DEFAULT_GUIDANCE_SCALE,
+        num_inference_steps: int | None = None,
+        guidance_scale: float | None = None,
         seed: int = -1,
         width: Optional[int] = None,
         height: Optional[int] = None,
@@ -430,6 +407,12 @@ class ViewEnhancer:
         """
         if self.pipe is None:
             self.load_pipeline()
+
+        ev = get_config().enhance_view
+        if num_inference_steps is None:
+            num_inference_steps = ev.num_inference_steps
+        if guidance_scale is None:
+            guidance_scale = ev.guidance_scale
         
         # Load image if path
         if isinstance(generated_image, (str, Path)):
@@ -453,7 +436,7 @@ class ViewEnhancer:
         
         # Use Phase 1 prompt if not provided
         if prompt is None:
-            prompt = FIRST_PHASE_PROMPT
+            prompt = get_config().prompts.enhance_first_phase
         
         # Set up generator for reproducibility
         if seed != -1 and isinstance(seed, int):
@@ -493,8 +476,8 @@ class ViewEnhancer:
         phase1_image: Union[str, Path, Image.Image],
         reference_image: Union[str, Path, Image.Image],
         prompt: Optional[str] = None,
-        num_inference_steps: int = DEFAULT_NUM_INFERENCE_STEPS,
-        guidance_scale: float = DEFAULT_GUIDANCE_SCALE,
+        num_inference_steps: int | None = None,
+        guidance_scale: float | None = None,
         seed: int = -1,
         width: Optional[int] = None,
         height: Optional[int] = None,
@@ -517,7 +500,13 @@ class ViewEnhancer:
         """
         if self.pipe is None:
             self.load_pipeline()
-        
+
+        ev = get_config().enhance_view
+        if num_inference_steps is None:
+            num_inference_steps = ev.num_inference_steps
+        if guidance_scale is None:
+            guidance_scale = ev.guidance_scale
+
         # Load images if paths
         if isinstance(phase1_image, (str, Path)):
             phase1_image = Image.open(phase1_image).convert("RGB")
@@ -546,7 +535,7 @@ class ViewEnhancer:
         
         # Use Phase 2 prompt if not provided
         if prompt is None:
-            prompt = SECOND_PHASE_PROMPT
+            prompt = get_config().prompts.enhance_second_phase
         
         # Set up generator for reproducibility
         if seed != -1 and isinstance(seed, int):
@@ -576,12 +565,12 @@ class ViewEnhancer:
         reference_image: Union[str, Path, Image.Image],
         prompt_phase1: Optional[str] = None,
         prompt_phase2: Optional[str] = None,
-        num_inference_steps: int = DEFAULT_NUM_INFERENCE_STEPS,
-        guidance_scale: float = DEFAULT_GUIDANCE_SCALE,
+        num_inference_steps: int | None = None,
+        guidance_scale: float | None = None,
         seed: int = -1,
         width: Optional[int] = None,
         height: Optional[int] = None,
-        padding_ratio: float = 0.05,
+        padding_ratio: float | None = None,
     ) -> Tuple[Image.Image, Image.Image, Dict]:
         """
         Two-phase image enhancement process.
@@ -606,6 +595,14 @@ class ViewEnhancer:
         """
         if self.pipe is None:
             self.load_pipeline()
+
+        ev = get_config().enhance_view
+        if num_inference_steps is None:
+            num_inference_steps = ev.num_inference_steps
+        if guidance_scale is None:
+            guidance_scale = ev.guidance_scale
+        if padding_ratio is None:
+            padding_ratio = ev.padding_ratio
         
         # Load images if paths
         if isinstance(generated_image, (str, Path)):
@@ -797,9 +794,9 @@ def enhance_view_ig2mv(
     prompt_phase1: Optional[str] = None,
     prompt_phase2: Optional[str] = None,
     seed: int = -1,
-    num_inference_steps: int = DEFAULT_NUM_INFERENCE_STEPS,
-    guidance_scale: float = DEFAULT_GUIDANCE_SCALE,
-    padding_ratio: float = 0.05,
+    num_inference_steps: int | None = None,
+    guidance_scale: float | None = None,
+    padding_ratio: float | None = None,
     enhancer: Optional[ViewEnhancer] = None,
 ) -> Tuple[Image.Image, Image.Image, Dict]:
     """
@@ -852,7 +849,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="/workspace/outputs/",
+        default="outputs/",
         help="Root data directory containing view_aligned folders"
     )
     parser.add_argument(
@@ -885,13 +882,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_inference_steps",
         type=int,
-        default=DEFAULT_NUM_INFERENCE_STEPS,
+        default=None,
         help="Number of inference steps"
     )
     parser.add_argument(
         "--guidance_scale",
         type=float,
-        default=DEFAULT_GUIDANCE_SCALE,
+        default=None,
         help="Guidance scale"
     )
     args = parser.parse_args()

@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hairport"
+version = "0.1.0"
+description = "HairPort: In-context 3D-Aware Hair Import and Transfer for Images"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Alireza Heidari"},
+]
+
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision",
+    "diffusers>=0.30.0",
+    "transformers>=4.40.0",
+    "accelerate",
+    "safetensors",
+    "Pillow",
+    "numpy",
+    "scipy",
+    "opencv-python",
+    "trimesh",
+    "pymeshlab",
+    "mediapipe",
+    "roma",
+    "rembg",
+    "ben2",
+    "easy_dwpose",
+    "huggingface_hub",
+]
+
+[project.optional-dependencies]
+blender = ["bpy>=4.0"]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[project.scripts]
+hairport = "hairport.pipeline:main"
+hairport-bald = "bald_konverter.cli:main"
+hairport-baldify = "hairport.stages.baldify:main"
+hairport-caption = "hairport.stages.caption:main"
+hairport-shape-mesh = "hairport.stages.shape_mesh:main"
+hairport-landmark-3d = "hairport.stages.landmark_3d:main"
+hairport-align-view = "hairport.stages.align_view:main"
+hairport-render-view = "hairport.stages.render_view:main"
+hairport-enhance-view = "hairport.stages.enhance_view:main"
+hairport-blend-hair = "hairport.stages.blend_hair:main"
+hairport-transfer-hair = "hairport.stages.transfer_hair:main"
+
+[tool.setuptools.packages.find]
+include = ["hairport*", "bald_konverter*", "fit_lmk*", "data*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

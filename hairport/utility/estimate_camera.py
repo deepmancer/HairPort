@@ -19,7 +19,7 @@ from plotly import graph_objects as go
 from scipy.spatial.transform import Rotation
 
 # Local imports
-from utils.mesh_transformation import (
+from hairport.core.mesh_utils import (
     rotate_glb_mesh,
     apply_rotation,
     apply_inverse_rotation,

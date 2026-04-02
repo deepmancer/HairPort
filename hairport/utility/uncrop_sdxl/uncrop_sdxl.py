@@ -15,7 +15,8 @@ from PIL import Image, ImageDraw, ImageFilter
 from tqdm import tqdm
 
 
-from utils.bg_remover import BackgroundRemover
+from hairport.core import BackgroundRemover
+from hairport.config import get_config
 from hairport.utility.uncrop_sdxl.controlnet_union import ControlNetModel_Union
 from hairport.utility.uncrop_sdxl.pipeline_fill_sd_xl import StableDiffusionXLFillPipeline
 from hairport.utility.uncrop_sdxl.image_uncropper import (
@@ -30,51 +31,78 @@ from hairport.utility.uncrop_sdxl.image_uncropper import (
 @dataclass
 class UncropperConfig:
     # Output dimensions
-    width: int = 1024
-    height: int = 1024
-    
+    width: int | None = None
+    height: int | None = None
+
     # Overlap settings
-    overlap_percentage: int = 5
+    overlap_percentage: int | None = None
     overlap_left: bool = True
     overlap_right: bool = True
     overlap_top: bool = True
     overlap_bottom: bool = True
-    
+
     # Alignment
     alignment: str = "Middle"
-    
-    # Inference settings
-    num_inference_steps: int = 12
-    resize_option: str = "Custom"
-    default_resize_percentage: float = 75.0
-    
-    # Blending settings for compositing original back onto result
-    blend_pixels: int = 21  # Number of pixels for feathered edge blending
-    
-    # Face size configuration for dynamic resizing
-    face_to_width_ratio: float = 0.45
-    min_resize_percentage: float = 30.0
-    max_resize_percentage: float = 100.0
-    
-    # Prompts
-    negative_prompt: str = (
-        "(cgi, 3d, grayscale, render, monochrome, sketch, pixelated, blurry, low quality, naked, nude, nudity, ugly drawing:1.8), "
-        "face asymmetry, eyes asymmetry, deformed eyes, open mouth, text, cropped, out of frame, worst quality, "
-        "low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, extra fingers, mutated hands, "
-        "poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, "
-        "bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, "
-        "missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck"
-        "underexposed, harsh shadows, dramatic lighting, vignette, color cast, oversaturated, undersaturated"
-    )
-    default_prompt: str = "high-quality photo of a person, realistic, high quality, 4k, ultra-detailed"
-    
-    # Model settings
-    dtype: str = "float16"
-    device: str = "cuda"
-    base_model: str = "SG161222/RealVisXL_V5.0_Lightning"
-    vae_model: str = "madebyollin/sdxl-vae-fp16-fix"
-    controlnet_repo: str = "xinsir/controlnet-union-sdxl-1.0"
 
+    # Inference settings
+    num_inference_steps: int | None = None
+    resize_option: str = "Custom"
+    default_resize_percentage: float | None = None
+
+    # Blending settings for compositing original back onto result
+    blend_pixels: int | None = None
+
+    # Face size configuration for dynamic resizing
+    face_to_width_ratio: float | None = None
+    min_resize_percentage: float | None = None
+    max_resize_percentage: float | None = None
+
+    # Prompts
+    negative_prompt: str | None = None
+    default_prompt: str | None = None
+
+    # Model settings
+    dtype: str | None = None
+    device: str | None = None
+    base_model: str | None = None
+    vae_model: str | None = None
+    controlnet_repo: str | None = None
+
+    def __post_init__(self):
+        cfg = get_config()
+        uc = cfg.uncrop
+        if self.width is None:
+            self.width = uc.width
+        if self.height is None:
+            self.height = uc.height
+        if self.overlap_percentage is None:
+            self.overlap_percentage = uc.overlap_percentage
+        if self.num_inference_steps is None:
+            self.num_inference_steps = uc.num_inference_steps
+        if self.default_resize_percentage is None:
+            self.default_resize_percentage = uc.default_resize_percentage
+        if self.blend_pixels is None:
+            self.blend_pixels = uc.blend_pixels
+        if self.face_to_width_ratio is None:
+            self.face_to_width_ratio = uc.face_to_width_ratio
+        if self.min_resize_percentage is None:
+            self.min_resize_percentage = uc.min_resize_percentage
+        if self.max_resize_percentage is None:
+            self.max_resize_percentage = uc.max_resize_percentage
+        if self.negative_prompt is None:
+            self.negative_prompt = cfg.prompts.uncrop_negative
+        if self.default_prompt is None:
+            self.default_prompt = cfg.prompts.uncrop_default
+        if self.dtype is None:
+            self.dtype = uc.dtype
+        if self.device is None:
+            self.device = cfg.device
+        if self.base_model is None:
+            self.base_model = cfg.models.realvis_v5_lightning
+        if self.vae_model is None:
+            self.vae_model = cfg.models.sdxl_vae
+        if self.controlnet_repo is None:
+            self.controlnet_repo = cfg.models.controlnet_union
 
 class Uncropper:
     def __init__(self, config: Optional[UncropperConfig] = None):
@@ -731,7 +759,7 @@ def main():
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="/workspace/celeba_reduced/",
+        default="outputs/",
         help="Directory containing input images",
     )
     # parser.add_argument(

@@ -205,3 +205,26 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ============================================================================
+# HairPort project-specific
+# ============================================================================
+
+# Downloaded model weights and large assets
+# assets/flame/
+assets/checkpoints/
+# assets/body_models/
+
+# External submodule clones (use scripts/setup_submodules.sh)
+modules/
+
+# Pipeline outputs
+outputs/
+
+# Weights / large binaries
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+!pyproject.toml

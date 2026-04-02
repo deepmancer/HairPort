@@ -11,6 +11,16 @@ import pandas as pd
 import trimesh
 from tqdm import tqdm
 from scipy.spatial.transform import Rotation
+from hairport.core.mesh_utils import (
+    rotate_mesh_vertices as _rotate_mesh_vertices,
+    apply_inverse_rotation,
+    apply_rotation,
+    align_target_to_source_view,
+    apply_glb_to_target_transform,
+    apply_target_to_glb_transform,
+    rotate_glb_mesh,
+    TARGET_LANDMARK_EXTENT,
+)
 
 
 logging.basicConfig(
@@ -44,160 +54,6 @@ def _setup_directories(
 
     return matted_image_dir, lmk_3d_dir, textured_mesh_dir
 
-
-def _rotate_mesh_vertices(mesh, rotation_matrix):
-    """Apply rotation matrix to mesh vertices and normals around center."""
-    mesh = mesh.copy()
-    mesh_center = mesh.vertices.mean(axis=0)
-    vertices_centered = mesh.vertices - mesh_center
-    mesh.vertices = (vertices_centered @ rotation_matrix.T) + mesh_center
-    
-    if hasattr(mesh, 'vertex_normals') and mesh.vertex_normals is not None:
-        mesh.vertex_normals = mesh.vertex_normals @ rotation_matrix.T
-    if hasattr(mesh, 'face_normals') and mesh.face_normals is not None:
-        mesh.face_normals = mesh.face_normals @ rotation_matrix.T
-    
-    return mesh
-
-
-def apply_inverse_rotation(mesh, euler_angles_rad):
-    """Apply inverse rotation to mesh using Euler angles."""
-    rotation = Rotation.from_euler('xyz', euler_angles_rad)
-    inverse_rotation_matrix = rotation.inv().as_matrix()
-    return _rotate_mesh_vertices(mesh, inverse_rotation_matrix)
-
-
-def apply_rotation(mesh, euler_angles_rad):
-    """Apply rotation to mesh using Euler angles."""
-    rotation = Rotation.from_euler('xyz', euler_angles_rad)
-    rotation_matrix = rotation.as_matrix()
-    return _rotate_mesh_vertices(mesh, rotation_matrix)
-
-
-def align_target_to_source_view(target_mesh, target_euler_rad, source_euler_rad):
-    """Align target mesh to source view by applying inverse then forward rotation."""
-    frontal_mesh = apply_inverse_rotation(target_mesh, target_euler_rad)
-    aligned_mesh = apply_rotation(frontal_mesh, source_euler_rad)
-    return aligned_mesh
-
-
-def apply_glb_to_target_transform(mesh):
-    """Transform mesh from GLB coordinate system to target system (90° X-axis rotation)."""
-    rotation_matrix = Rotation.from_euler('x', np.pi / 2).as_matrix()
-    return _rotate_mesh_vertices(mesh, rotation_matrix)
-
-
-def apply_target_to_glb_transform(mesh):
-    """Transform mesh from target coordinate system back to GLB system (-90° X-axis rotation)."""
-    rotation_matrix = Rotation.from_euler('x', -np.pi / 2).as_matrix()
-    return _rotate_mesh_vertices(mesh, rotation_matrix)
-
-def rotate_glb_mesh(
-    input_glb_path: str,
-    output_glb_path: str = None,
-    euler_angles_rad: list = [0.0, 0.0, 0.0],
-    rotate_fn=apply_inverse_rotation,
-    to_normalize_vertice_ids: np.ndarray = None,
-    target_landmark_extent: float = None,
-):
-    """Rotate a GLB mesh file and optionally save the result.
-    
-    Args:
-        input_glb_path: Path to input GLB file
-        output_glb_path: Path to save output GLB file (optional)
-        euler_angles_rad: Euler angles for rotation
-        rotate_fn: Function to apply rotation
-        to_normalize_vertice_ids: Vertex indices for centering (landmarks)
-        target_landmark_extent: Target max extent (per axis) of landmarks in meters.
-            If provided, mesh will be scaled so landmark bounding box max extent equals this value.
-    
-    Returns:
-        result_scene: The processed trimesh Scene
-        frontalized_mesh: The intermediate frontalized mesh
-        final_landmark_coords: 3D coordinates of landmarks after scaling/centering (or None)
-    """
-    input_path = Path(input_glb_path)
-    
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input GLB file does not exist: {input_glb_path}")
-
-    if output_glb_path is not None:
-        output_path = Path(output_glb_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    loaded = trimesh.load(str(input_path), force='scene')
-    final_landmark_coords = None
-    
-    if isinstance(loaded, trimesh.Scene):
-        for mesh_name, mesh in loaded.geometry.items():
-            if isinstance(mesh, trimesh.Trimesh):
-                mesh_in_target = apply_glb_to_target_transform(mesh)
-                frontalized_mesh = rotate_fn(mesh_in_target, euler_angles_rad)
-                mesh_back_to_glb = apply_target_to_glb_transform(frontalized_mesh)
-                if to_normalize_vertice_ids is not None:
-                    vertices = mesh_back_to_glb.vertices.copy()
-                    landmark_vertices = vertices[to_normalize_vertice_ids]
-                    
-                    # Scale based on landmark bounding box if target extent is specified
-                    if target_landmark_extent is not None:
-                        landmark_min = landmark_vertices.min(axis=0)
-                        landmark_max = landmark_vertices.max(axis=0)
-                        landmark_extent = landmark_max - landmark_min
-                        max_extent = landmark_extent.max()
-                        
-                        if max_extent > 0:
-                            scale_factor = target_landmark_extent / max_extent
-                            vertices *= scale_factor
-                            landmark_vertices = vertices[to_normalize_vertice_ids]
-                    
-                    # Center using landmark mean
-                    centroid = landmark_vertices.mean(axis=0)
-                    vertices -= centroid
-                    mesh_back_to_glb.vertices = vertices
-                    
-                    # Compute final landmark coordinates
-                    final_landmark_coords = vertices[to_normalize_vertice_ids]
-                loaded.geometry[mesh_name] = mesh_back_to_glb
-        
-        result_scene = loaded
-        result_mesh = list(loaded.geometry.values())[0] if loaded.geometry else None
-
-    elif isinstance(loaded, trimesh.Trimesh):
-        mesh_in_target = apply_glb_to_target_transform(loaded)
-        frontalized_mesh = rotate_fn(mesh_in_target, euler_angles_rad)
-        result_mesh = apply_target_to_glb_transform(frontalized_mesh)
-        if to_normalize_vertice_ids is not None:
-            vertices = result_mesh.vertices.copy()
-            landmark_vertices = vertices[to_normalize_vertice_ids]
-            
-            # Scale based on landmark bounding box if target extent is specified
-            if target_landmark_extent is not None:
-                landmark_min = landmark_vertices.min(axis=0)
-                landmark_max = landmark_vertices.max(axis=0)
-                landmark_extent = landmark_max - landmark_min
-                max_extent = landmark_extent.max()
-                
-                if max_extent > 0:
-                    scale_factor = target_landmark_extent / max_extent
-                    vertices *= scale_factor
-                    landmark_vertices = vertices[to_normalize_vertice_ids]
-            
-            # Center using landmark mean
-            centroid = landmark_vertices.mean(axis=0)
-            vertices -= centroid
-            result_mesh.vertices = vertices
-            
-            # Compute final landmark coordinates
-            final_landmark_coords = vertices[to_normalize_vertice_ids]
-        
-        result_scene = trimesh.Scene(result_mesh)
-    else:
-        raise ValueError(f"Unexpected type loaded: {type(loaded)}")
-    
-    if output_glb_path is not None:
-        result_scene.export(str(output_path), file_type='glb')
-    
-    return result_scene, frontalized_mesh, final_landmark_coords
 
 
 def process_shape_mesh(
@@ -233,7 +89,7 @@ def process_shape_meshes(
         logger.warning(f"No samples to process")
         return
     to_frontalize_ids = []
-    meshes_dir = "/workspace/outputs/hi3dgen_copy"
+    meshes_dir = str(Path(data_dir) / "hi3dgen_copy")
     for folder in os.listdir(meshes_dir):
         shape_mesh_path = os.path.join(meshes_dir, folder, "shape_mesh.glb")
         if os.path.exists(shape_mesh_path):
@@ -298,7 +154,7 @@ def main(
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='3D Landmark Fitting Post-Processing')
-    parser.add_argument('--data_dir', type=str, default="/workspace/outputs",
+    parser.add_argument('--data_dir', type=str, default="outputs",
                         help='Path to the data directory')
     parser.add_argument('--shape_provider', type=str, default='hi3dgen', 
                         choices=['hunyuan', 'hi3dgen'],

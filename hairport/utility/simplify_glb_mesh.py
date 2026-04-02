@@ -546,7 +546,7 @@ def simplify_glb(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Simplify a GLB (textured or untextured) to a target face count.")
-    p.add_argument("--input", default="/workspace/outputs/hi3dgen_copy/ana_1/shape_mesh.glb", type=Path, help="Input .glb path")
+    p.add_argument("--input", default="outputs/hi3dgen/sample/shape_mesh.glb", type=Path, help="Input .glb path")
     p.add_argument("--output", default="output.glb", type=Path, help="Output .glb path")
     p.add_argument("--target-faces", default=200_000, type=int, help="Target triangle face count")
 

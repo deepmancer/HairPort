@@ -30,11 +30,8 @@ from hairport.utility.warper import (
     align_images_for_min_lmk_diff,
     transform_image_and_mask,
 )
-from utils.bg_remover import BackgroundRemover
-from utils.sam_mask_extractor import SAMMaskExtractor
-from utils.super_resolution import CodeFormerEnhancer
-from utils.facial_landmark_detector import FacialLandmarkDetector
-from utils.flame_fitting import FLAMEFitter
+from hairport.core import BackgroundRemover, SAMMaskExtractor, CodeFormerEnhancer, FacialLandmarkDetector, FLAMEFitter
+from hairport.config import get_config
 
 def flush():
     gc.collect()
@@ -340,54 +337,106 @@ def composite_hair_onto_bald(
 @dataclass
 class BlendingConfig:
     # Resolution settings
-    RESOLUTION: int = 1024
-    OPTIMIZATION_RESOLUTION: int = 1024  # Lower resolution for faster alignment optimization
+    RESOLUTION: int | None = None
+    OPTIMIZATION_RESOLUTION: int | None = None
     
     # Enhancement settings
-    CODEFORMER_UPSCALE: int = 2
-    CODEFORMER_FIDELITY: float = 0.5
+    CODEFORMER_UPSCALE: int | None = None
+    CODEFORMER_FIDELITY: float | None = None
     
-    # Alignment settings (FLAME-based IOU alignment is now prioritized)
-    # These weights are used when FLAME masks are available
-    ALIGNMENT_IOU_WEIGHT: float = 1.0
-    ALIGNMENT_LANDMARK_WEIGHT: float = 1.0
+    # Alignment settings
+    ALIGNMENT_IOU_WEIGHT: float | None = None
+    ALIGNMENT_LANDMARK_WEIGHT: float | None = None
     
     # SAM settings
-    SAM_CONFIDENCE_THRESHOLD: float = 0.4
+    SAM_CONFIDENCE_THRESHOLD: float | None = None
     
     # Directory structure
-    DIR_MATTED_IMAGE: str = "matted_image"
-    DIR_BALD: str = "bald"
-    DIR_VIEW_ALIGNED: str = "view_aligned"
-    DIR_SRC_OUTPAINTED: str = "source_outpainted"
+    DIR_MATTED_IMAGE: str | None = None
+    DIR_BALD: str | None = None
+    DIR_VIEW_ALIGNED: str | None = None
+    DIR_SRC_OUTPAINTED: str | None = None
     
     # Top-level directories for 3D aware/unaware processing
-    DIR_3D_AWARE: str = "3d_aware"
-    DIR_3D_UNAWARE: str = "3d_unaware"
+    DIR_3D_AWARE: str | None = None
+    DIR_3D_UNAWARE: str | None = None
     
     # Subdirectories within 3d_aware/ and 3d_unaware/
-    SUBDIR_WARPING: str = "warping"
-    SUBDIR_BLENDING: str = "blending"
-    SUBDIR_ALIGNMENT: str = "alignment"
-    SUBDIR_BALD_IMAGE: str = "image"
-    SUBDIR_BALD_LMK: str = "lmk"
+    SUBDIR_WARPING: str | None = None
+    SUBDIR_BLENDING: str | None = None
+    SUBDIR_ALIGNMENT: str | None = None
+    SUBDIR_BALD_IMAGE: str | None = None
+    SUBDIR_BALD_LMK: str | None = None
     
     # File names
-    FILE_LANDMARKS: str = "landmarks.npy"
-    FILE_TARGET_IMAGE_GENERATED: str = "target_image_phase_1.png"
-    FILE_OUTPAINTED_IMAGE: str = "outpainted_image.png"
+    FILE_LANDMARKS: str | None = None
+    FILE_TARGET_IMAGE_GENERATED: str | None = None
+    FILE_OUTPAINTED_IMAGE: str | None = None
     FILE_WARPED_TARGET_IMAGE: str = "warped_target_image.png"
     FILE_TARGET_HEAD_MASK: str = "target_head_mask.png"
     FILE_TARGET_HAIR_MASK: str = "target_hair_mask.png"
     FILE_TARGET_HAIR_ENHANCED: str = "target_hair_enhanced.png"
     FILE_WARPING_PARAMS: str = "warping_params.json"
     FILE_ALPHA_BLENDED: str = "alpha_blended.png"
-    FILE_POISSON_BLENDED: str = "poisson_blended.png"
+    FILE_POISSON_BLENDED: str | None = None
     FILE_FLAME_SEGMENTATION: str = "flame_segmentation.png"
     FILE_FLAME_OVERLAY: str = "flame_overlay.png"
-    FILE_HEAD_ORIENTATION: str = "head_orientation.json"
+    FILE_HEAD_ORIENTATION: str | None = None
     
-    POISSON_BLEND_STRENGTH: float = 0.5
+    POISSON_BLEND_STRENGTH: float | None = None
+
+    def __post_init__(self):
+        cfg = get_config()
+        bh = cfg.blend_hair
+        ds = cfg.dataset
+        if self.RESOLUTION is None:
+            self.RESOLUTION = bh.resolution
+        if self.OPTIMIZATION_RESOLUTION is None:
+            self.OPTIMIZATION_RESOLUTION = bh.optimization_resolution
+        if self.CODEFORMER_UPSCALE is None:
+            self.CODEFORMER_UPSCALE = bh.codeformer_upscale
+        if self.CODEFORMER_FIDELITY is None:
+            self.CODEFORMER_FIDELITY = bh.codeformer_fidelity
+        if self.ALIGNMENT_IOU_WEIGHT is None:
+            self.ALIGNMENT_IOU_WEIGHT = bh.alignment_iou_weight
+        if self.ALIGNMENT_LANDMARK_WEIGHT is None:
+            self.ALIGNMENT_LANDMARK_WEIGHT = bh.alignment_landmark_weight
+        if self.SAM_CONFIDENCE_THRESHOLD is None:
+            self.SAM_CONFIDENCE_THRESHOLD = bh.sam_confidence_threshold
+        if self.DIR_MATTED_IMAGE is None:
+            self.DIR_MATTED_IMAGE = ds.dir_matted_image
+        if self.DIR_BALD is None:
+            self.DIR_BALD = ds.dir_bald
+        if self.DIR_VIEW_ALIGNED is None:
+            self.DIR_VIEW_ALIGNED = ds.dir_view_aligned
+        if self.DIR_SRC_OUTPAINTED is None:
+            self.DIR_SRC_OUTPAINTED = ds.dir_source_outpainted
+        if self.DIR_3D_AWARE is None:
+            self.DIR_3D_AWARE = ds.dir_3d_aware
+        if self.DIR_3D_UNAWARE is None:
+            self.DIR_3D_UNAWARE = ds.dir_3d_unaware
+        if self.SUBDIR_WARPING is None:
+            self.SUBDIR_WARPING = ds.subdir_warping
+        if self.SUBDIR_BLENDING is None:
+            self.SUBDIR_BLENDING = ds.subdir_blending
+        if self.SUBDIR_ALIGNMENT is None:
+            self.SUBDIR_ALIGNMENT = ds.subdir_alignment
+        if self.SUBDIR_BALD_IMAGE is None:
+            self.SUBDIR_BALD_IMAGE = ds.subdir_bald_image
+        if self.SUBDIR_BALD_LMK is None:
+            self.SUBDIR_BALD_LMK = ds.subdir_bald_lmk
+        if self.FILE_LANDMARKS is None:
+            self.FILE_LANDMARKS = ds.file_landmarks
+        if self.FILE_TARGET_IMAGE_GENERATED is None:
+            self.FILE_TARGET_IMAGE_GENERATED = ds.file_target_phase1
+        if self.FILE_OUTPAINTED_IMAGE is None:
+            self.FILE_OUTPAINTED_IMAGE = "outpainted_image.png"
+        if self.FILE_POISSON_BLENDED is None:
+            self.FILE_POISSON_BLENDED = ds.file_poisson_blended
+        if self.FILE_HEAD_ORIENTATION is None:
+            self.FILE_HEAD_ORIENTATION = ds.file_head_orientation
+        if self.POISSON_BLEND_STRENGTH is None:
+            self.POISSON_BLEND_STRENGTH = bh.poisson_blend_strength
 
 
 def requires_3d_lifting(folder_path: Path, bald_version: str) -> bool:
@@ -1136,7 +1185,7 @@ def process_view_aligned_folder(
     
     if flame_fitter is None:
         print("Initializing FLAMEFitter...")
-        flame_fitter = FLAMEFitter(device='cuda')
+        flame_fitter = FLAMEFitter()
         should_cleanup = True
 
     # Check if source outpainted image exists
@@ -1534,7 +1583,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="/workspace/outputs/",
+        default="outputs/",
         help="Root data directory containing view_aligned folders"
     )
     parser.add_argument(
@@ -1597,7 +1646,7 @@ if __name__ == "__main__":
         min_detection_confidence=0.5
     )
     sam_extractor = SAMMaskExtractor(confidence_threshold=config.SAM_CONFIDENCE_THRESHOLD)
-    flame_fitter = FLAMEFitter(device='cuda', disable_face_crop=False)
+    flame_fitter = FLAMEFitter()
     print("Models initialized.\n")
     
     try:

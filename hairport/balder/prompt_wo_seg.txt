@@ -1,1 +1,0 @@
-Two-panel image: [LEFT] is the original source. Generate [RIGHT] as the same subject but bald, preserving identity, facial features, clothing, background, lighting, and camera style.

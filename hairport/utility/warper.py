@@ -22,7 +22,7 @@ from scipy.optimize import minimize
 
 # === Local / project-specific modules ===
 from data.preprocess.compute_mask import HairMaskPipeline
-from utils.bg_remover import BackgroundRemover
+from hairport.core import BackgroundRemover
 
 
 

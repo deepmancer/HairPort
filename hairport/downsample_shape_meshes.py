@@ -48,7 +48,7 @@ def get_to_simplify_ids_non_rep(data_dir: str, min_size_mb: float = 20.0, meshes
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--data_dir", type=str, default="/workspace/celeba_reduced/")
+    parser.add_argument("--data_dir", type=str, default="outputs/")
     parser.add_argument("--target-faces", default=150_000, type=int, help="Target triangle face count")
     args = parser.parse_args()
 

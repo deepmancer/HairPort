@@ -1,24 +1,13 @@
-import json
-import math
 import os
-import random
-import time
 
 import numpy as np
-import pandas as pd
 import torch
-from diffusers import (
-    FlowMatchEulerDiscreteScheduler,
-    FluxFillPipeline,
-    QwenImageEditPipeline,
-)
-from diffusers.utils import load_image
-from huggingface_hub import hf_hub_download
 from PIL import Image, ImageDraw
 from tqdm import tqdm
 
 from hairport.utility.qwenimage.pipeline_qwen_image_edit import QwenImageEditPipeline
 from hairport.utility.qwenimage.transformer_qwenimage import QwenImageTransformer2DModel
+from hairport.config import get_config
 # from qwenimage.qwen_fa3_processor import QwenDoubleStreamAttnProcessorFA3
 # from optimization import optimize_pipeline_
 def can_expand(source_width, source_height, target_width, target_height, alignment):
@@ -127,95 +116,71 @@ def prepare_image_and_mask(image, width, height, overlap_percentage, resize_opti
     return background, mask
 
 
-data_dir = "/workspace/outputs/bald/w_seg/"
-images_dir = data_dir + "image/"
-# pairs_df ="/workspace/outputs/pairs
-output_dir = data_dir + "image_outpainted/"
-os.makedirs(output_dir, exist_ok=True)
+def main():
+    cfg = get_config()
+    _cap = cfg.caption
 
-# pairs_df = pd.read_csv(pairs_df)
-# all_target_ids = pairs_df['target_id'].tolist()
-unique_target_ids = list(os.listdir(images_dir))
-unique_target_ids = [fname.split(".")[0] for fname in unique_target_ids]
-dtype = torch.bfloat16
-device = "cuda" if torch.cuda.is_available() else "cpu"
+    data_dir = f"outputs/bald/{cfg.pipeline.bald_version}/"
+    images_dir = data_dir + "image/"
+    output_dir = data_dir + "image_outpainted/"
+    os.makedirs(output_dir, exist_ok=True)
 
-# Scheduler configuration for Lightning
-scheduler_config = {
-    "base_image_seq_len": 256,
-    "base_shift": math.log(3),
-    "invert_sigmas": False,
-    "max_image_seq_len": 8192,
-    "max_shift": math.log(3),
-    "num_train_timesteps": 1000,
-    "shift": 1.0,
-    "shift_terminal": None,
-    "stochastic_sampling": False,
-    "time_shift_type": "exponential",
-    "use_beta_sigmas": False,
-    "use_dynamic_shifting": True,
-    "use_exponential_sigmas": False,
-    "use_karras_sigmas": False,
-}
+    unique_target_ids = list(os.listdir(images_dir))
+    unique_target_ids = [fname.split(".")[0] for fname in unique_target_ids]
 
-# Initialize scheduler with Lightning config
-# scheduler = FlowMatchEulerDiscreteScheduler.from_config(scheduler_config)
-from diffusers import QwenImageEditPlusPipeline
+    # --- Model Loading ---
+    dtype = torch.bfloat16
+    device = cfg.device
+    pipe = QwenImageEditPipeline.from_pretrained(cfg.models.qwen_image_edit, torch_dtype=dtype).to(device)
+    pipe.transformer.__class__ = QwenImageTransformer2DModel
 
-# --- Model Loading ---
-dtype = torch.bfloat16
-device = "cuda" if torch.cuda.is_available() else "cpu"
-pipe = QwenImageEditPipeline.from_pretrained("Qwen/Qwen-Image-Edit", torch_dtype=dtype).to(device)
-pipe.transformer.__class__ = QwenImageTransformer2DModel
-# pipe.transformer.set_attn_processor(QwenDoubleStreamAttnProcessorFA3())
-
-
-pipe.load_lora_weights(
-        "lightx2v/Qwen-Image-Lightning", 
-        weight_name="Qwen-Image-Lightning-8steps-V1.1.safetensors",
-)
-pipe.fuse_lora()
-
-for target_id in tqdm(unique_target_ids):
-    negative_prompt = " "
-    # Set up the generator for reproducibility
-    generator = torch.Generator(device=device).manual_seed(42)
-    output_path = os.path.join(output_dir, f"{target_id}.png")
-    if os.path.exists(output_path):
-        print(f"Skipping {target_id}, already exists.")
-        continue
-
-    print(f"Processing {target_id}...")
-    input_image_path = os.path.join(images_dir, f"{target_id}.png")
-    input_image = Image.open(input_image_path).convert("RGB")
-    outpainting_params=dict(    
-        width=1024,
-        height=1024,
-        overlap_percentage=5,
-        resize_option="Custom",
-        custom_resize_percentage=30,
-        alignment="Middle",
-        overlap_left=True,
-        overlap_right=True,
-        overlap_top=True,
-        overlap_bottom=True,
+    pipe.load_lora_weights(
+        cfg.models.qwen_lightning_lora,
+        weight_name=cfg.models.qwen_lightning_lora_weight,
     )
-    input_image_prepared, mask = prepare_image_and_mask(
-        image=input_image,
-        **outpainting_params
-    )    
-    result = pipe(
-        image=input_image_prepared,
-        prompt="Replace the white margins with coherent content that matches the existing image. Preserve the identity of the person and do not alter the inner content. ",
-        true_cfg_scale=1.0,
-        negative_prompt=" ",
-        num_inference_steps=8,
-        max_sequence_length=512,
-        height=1024,
-        width=1024,
-        # rewrite_prompt=True,
-        # api_name="/infer"
-    ).images[0]
-    out_image = result.convert("RGB").resize((1024, 1024), Image.Resampling.LANCZOS)
-    out_image.save(output_path)
+    pipe.fuse_lora()
+
+    for target_id in tqdm(unique_target_ids):
+        negative_prompt = " "
+        generator = torch.Generator(device=device).manual_seed(cfg.seed)
+        output_path = os.path.join(output_dir, f"{target_id}.png")
+        if os.path.exists(output_path):
+            print(f"Skipping {target_id}, already exists.")
+            continue
+
+        print(f"Processing {target_id}...")
+        input_image_path = os.path.join(images_dir, f"{target_id}.png")
+        input_image = Image.open(input_image_path).convert("RGB")
+        outpainting_params = dict(
+            width=_cap.width,
+            height=_cap.height,
+            overlap_percentage=_cap.overlap_percentage,
+            resize_option="Custom",
+            custom_resize_percentage=_cap.resize_percentage,
+            alignment="Middle",
+            overlap_left=True,
+            overlap_right=True,
+            overlap_top=True,
+            overlap_bottom=True,
+        )
+        input_image_prepared, mask = prepare_image_and_mask(
+            image=input_image,
+            **outpainting_params,
+        )
+        result = pipe(
+            image=input_image_prepared,
+            prompt=cfg.prompts.caption_outpaint,
+            true_cfg_scale=_cap.true_cfg_scale,
+            negative_prompt=" ",
+            num_inference_steps=_cap.num_inference_steps,
+            max_sequence_length=_cap.max_sequence_length,
+            height=_cap.height,
+            width=_cap.width,
+        ).images[0]
+        out_image = result.convert("RGB").resize((_cap.width, _cap.height), Image.Resampling.LANCZOS)
+        out_image.save(output_path)
+
+
+if __name__ == "__main__":
+    main()
     

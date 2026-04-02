@@ -22,10 +22,15 @@ from diffusers import (
 )
 
 import random
-
 import sys
 
-sys.path.insert(0, '/workspace/HairPort/MV-Adapter')
+from hairport.config import get_config
+
+_cfg = get_config()
+_mvadapter_path = str(_cfg.paths.mv_adapter_module)
+if _mvadapter_path not in sys.path:
+    sys.path.insert(0, _mvadapter_path)
+
 from mvadapter.models.attention_processor import (
     DecoupledMVRowSelfAttnProcessor2_0,
     DecoupledMVRowColSelfAttnProcessor2_0,
@@ -43,68 +48,76 @@ from mvadapter.utils.mesh_utils import (
     get_orthogonal_camera,
 )
 
-
-# from utils.bg_remover import BackgroundRemover
-
-from rembg import remove, new_session
-
-class BackgroundRemover:
-    def __init__(self, device: str | torch.device = 'cuda'):
-        self.device = torch.device(device)
-        self._session = new_session("birefnet-general")
-    
-    def remove_background(self, image: Image.Image, refine_foreground: bool = False) -> tuple[Image.Image, Image.Image]:
-        foreground = remove(image, session=self._session)
-        alpha = foreground.getchannel('A')
-        mask = ((np.array(alpha) / 255.0) > 0.8).astype(np.uint8) * 255
-        return foreground, Image.fromarray(mask)
-
-sys.path.insert(0, '/workspace/HairPort/Hairdar')
+from hairport.core.bg_remover import BackgroundRemover
 
 
 @dataclass
 class TexturedViewConfig:
     """Configuration for generating a textured view."""
     # Model paths
-    base_model: str = "SG161222/RealVisXL_V4.0"
-    # base_model: str = "stabilityai/stable-diffusion-xl-base-1.0"
-    vae_model: str = "madebyollin/sdxl-vae-fp16-fix"
-    adapter_path: str = "huanngzh/mv-adapter"
-    adapter_weight_name: str = "mvadapter_ig2mv_sdxl.safetensors"
-    # "mvadapter_ig2mv_sdxl.safetensors"
-    lora_models: Optional[List[str]] = None  # e.g., ["path/to/lora_model1.safetensors", "path/to/lora_model2.safetensors"]
-    lora_scales: Optional[List[float]] = None  # e.g., [0.75, 0.5]
-    
-    def __post_init__(self):
-        # return
-        if self.lora_models is None:
-            self.lora_models = ["/workspace/HairPort/MV-Adapter/loras/add-detail-xl.safetensors"]
-        if self.lora_scales is None:
-            self.lora_scales = [0.8]
+    base_model: str | None = None
+    vae_model: str | None = None
+    adapter_path: str | None = None
+    adapter_weight_name: str | None = None
+    lora_models: Optional[List[str]] = None
+    lora_scales: Optional[List[float]] = None
+
     # Generation parameters
-    num_views: int = 6  # Standard MVAdapter uses 6 views
-    num_inference_steps: int = 50
-    guidance_scale: float = 3.0
-    reference_conditioning_scale: float = 1.0
-    control_conditioning_scale: float = 1.0
-    negative_prompt: str = (
-        "(cgi, 3d, grayscale, render, monochrome, sketch, pixelated, blurry, naked, nude, nudity, ugly drawing:1.8), "
-        "face asymmetry, eyes asymmetry, deformed eyes, open mouth, text, cropped, out of frame, worst quality, "
-        "low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, extra fingers, mutated hands, "
-        "poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, "
-        "bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, "
-        "missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck"
-        "underexposed, harsh shadows, dramatic lighting, vignette, color cast, oversaturated, undersaturated"
-    )
-    # "watermark, ugly, deformed, noisy, blurry, low contrast, bad anatomy, disfigured"
+    num_views: int | None = None
+    num_inference_steps: int | None = None
+    guidance_scale: float | None = None
+    reference_conditioning_scale: float | None = None
+    control_conditioning_scale: float | None = None
+    negative_prompt: str | None = None
 
     # Output dimensions
-    height: int = 1024
-    width: int = 1024
+    height: int | None = None
+    width: int | None = None
 
     # Device settings
-    device: str = "cuda"
+    device: str | None = None
     dtype: torch.dtype = torch.float16
+
+    def __post_init__(self):
+        cfg = get_config()
+        rv = cfg.render_view
+        # Model paths
+        if self.base_model is None:
+            self.base_model = cfg.models.realvis_v4
+        if self.vae_model is None:
+            self.vae_model = cfg.models.sdxl_vae
+        if self.adapter_path is None:
+            self.adapter_path = cfg.models.mv_adapter
+        if self.adapter_weight_name is None:
+            self.adapter_weight_name = cfg.models.mv_adapter_weight
+        if self.lora_models is None:
+            self.lora_models = [
+                str(Path(cfg.paths.mv_adapter_module) / rv.lora_dir / f)
+                for f in rv.lora_files
+            ]
+        if self.lora_scales is None:
+            self.lora_scales = list(rv.lora_scales)
+        # Generation parameters
+        if self.num_views is None:
+            self.num_views = rv.num_views
+        if self.num_inference_steps is None:
+            self.num_inference_steps = rv.num_inference_steps
+        if self.guidance_scale is None:
+            self.guidance_scale = rv.guidance_scale
+        if self.reference_conditioning_scale is None:
+            self.reference_conditioning_scale = rv.reference_conditioning_scale
+        if self.control_conditioning_scale is None:
+            self.control_conditioning_scale = rv.control_conditioning_scale
+        if self.negative_prompt is None:
+            self.negative_prompt = cfg.prompts.render_view_negative
+        # Output dimensions
+        if self.height is None:
+            self.height = rv.height
+        if self.width is None:
+            self.width = rv.width
+        # Device
+        if self.device is None:
+            self.device = cfg.device
 
 
 
@@ -238,10 +251,17 @@ def flush_gpu_memory():
 def create_camera_from_params(
     camera_params: CameraParams,
     image_size: Tuple[int, int],
-    near: float = 0.1,
-    far: float = 100.0,
-    device: str = "cuda",
+    near: float | None = None,
+    far: float | None = None,
+    device: str | None = None,
 ) -> Camera:
+    cfg = get_config()
+    if near is None:
+        near = cfg.render_view.camera_near
+    if far is None:
+        far = cfg.render_view.camera_far
+    if device is None:
+        device = cfg.device
     width, height = image_size
     
     # Convert numpy to torch tensors
@@ -1141,7 +1161,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="/workspace/outputs/",
+        default="outputs/",
         help="Root data directory containing view_aligned folders"
     )
     parser.add_argument(
