@@ -475,4 +475,4 @@ These are cloned automatically by `scripts/setup_submodules.sh`.
 
 This project is released under the [MIT License](LICENSE).
 
-Copyright (c) 2026 Alireza Heidari
+Copyright (c) 2026
