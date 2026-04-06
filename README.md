@@ -3,6 +3,7 @@
 **In-context 3D-Aware Hair Import and Transfer for Images**
 
 > Bald Converters Model Weights: https://huggingface.co/deepmancer/bald_konverter
+
 > Baldy Dataset: https://huggingface.co/datasets/deepmancer/baldy
 
 ---
