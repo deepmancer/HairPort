@@ -15,7 +15,7 @@ import logging
 from typing import Optional
 
 import torch
-from diffusers import FluxInpaintPipeline
+from .toolkit.pipeline_flux_inpaint import FluxInpaintPipeline
 from PIL import Image
 
 from ..config.defaults import (
