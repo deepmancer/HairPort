@@ -78,13 +78,13 @@ class DatasetManager:
         """Caption / prompt JSON."""
         return self.root / "prompt" / f"{identity_id}.json"
 
-    def pixel3dmm_dir(self, identity_id: str) -> Path:
-        """pixel3dmm output for an identity."""
-        return self.root / "pixel3dmm_output" / identity_id
+    def head_orientation_dir(self, identity_id: str) -> Path:
+        """Head orientation cache directory for an identity."""
+        return self.root / "head_orientation" / identity_id
 
     def head_orientation_file(self, identity_id: str) -> Path:
-        """Head orientation JSON from pixel3dmm."""
-        return self.pixel3dmm_dir(identity_id) / "head_orientation.json"
+        """Head orientation JSON (computed via FLAMEFitter)."""
+        return self.head_orientation_dir(identity_id) / "head_orientation.json"
 
     # ------------------------------------------------------------------
     # Bald images

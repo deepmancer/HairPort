@@ -33,7 +33,7 @@ class Config:
     
     # Directory structure
     DIR_MATTED_IMAGE: str | None = None
-    DIR_FLAME: str | None = None
+    DIR_HEAD_ORIENTATION: str | None = None
     DIR_LANDMARKS: str | None = None
     DIR_LANDMARKS_3D: str | None = None
     DIR_VIEW_ALIGNED: str | None = None
@@ -62,8 +62,8 @@ class Config:
             self.RENDER_RESOLUTION = av.render_resolution
         if self.DIR_MATTED_IMAGE is None:
             self.DIR_MATTED_IMAGE = ds.dir_matted_image
-        if self.DIR_FLAME is None:
-            self.DIR_FLAME = ds.dir_pixel3dmm
+        if self.DIR_HEAD_ORIENTATION is None:
+            self.DIR_HEAD_ORIENTATION = ds.dir_head_orientation
         if self.DIR_LANDMARKS is None:
             self.DIR_LANDMARKS = ds.dir_landmarks
         if self.DIR_LANDMARKS_3D is None:
@@ -108,31 +108,36 @@ def compute_lift_3d(
     config: Config = None,
 ) -> tuple[bool, float]:
     """Compute whether 3D lifting is needed based on angle difference between target and source.
+
+    Head orientation is obtained via FLAMEFitter (SHeaP) and cached under
+    ``<data_dir>/<DIR_HEAD_ORIENTATION>/<id>/head_orientation.json``.
     
     Returns:
         tuple[bool, float]: (lift_3d_decision, angle_difference_in_radians)
     """
+    from hairport.core.flame_fitting import compute_head_orientation
+
     if config is None:
         config = Config()
     
     data_dir = str(data_dir)
-    flame_dir = os.path.join(data_dir, config.DIR_FLAME)
+    orientation_dir = os.path.join(data_dir, config.DIR_HEAD_ORIENTATION)
     
-    # Load orientation data
-    source_head_orientation_path = os.path.join(flame_dir, source_id, config.FILE_HEAD_ORIENTATION)
-    target_head_orientation_path = os.path.join(flame_dir, target_id, config.FILE_HEAD_ORIENTATION)
-    
-    with open(source_head_orientation_path, 'r') as f:
-        source_head_orientation_data = json.load(f)
-    with open(target_head_orientation_path, 'r') as f:
-        target_head_orientation_data = json.load(f)
+    # Compute / load cached orientation for both identities
+    source_image_path = os.path.join(data_dir, "image", f"{source_id}.png")
+    target_image_path = os.path.join(data_dir, "image", f"{target_id}.png")
+    source_cache = os.path.join(orientation_dir, source_id)
+    target_cache = os.path.join(orientation_dir, target_id)
+
+    source_head_orientation_data = compute_head_orientation(
+        image_path=source_image_path, cache_dir=source_cache,
+    )
+    target_head_orientation_data = compute_head_orientation(
+        image_path=target_image_path, cache_dir=target_cache,
+    )
     
     target_euler_rad = target_head_orientation_data['euler_angles_xyz_radians'][0]
-    # target_euler_rad[0] = 0.0  # Ignore pitch for lift_3d computation
-    # target_euler_rad[2] = 0.0  # Ignore yaw for lift_3d computation
     source_euler_rad = source_head_orientation_data['euler_angles_xyz_radians'][0]
-    # source_euler_rad[0] = 0.0  # Ignore pitch for lift_3d computation
-    # source_euler_rad[2] = 0.0  # Ignore yaw for lift_3d computation
     
     cross_head_angle_diff = compute_euler_angle_difference(
         target_euler_rad,
@@ -282,9 +287,15 @@ def run_camera_optimization(
 ) -> bool:
     """Run camera optimization for a source-target pair that requires 3D lifting.
     Assumes outpainting has already been computed.
+
+    Head orientation is obtained via FLAMEFitter (SHeaP), removing the
+    legacy pixel3dmm dependency.
+
     Returns:
         bool: True if optimization was run, False if skipped (already exists)
     """
+    from hairport.core.flame_fitting import compute_head_orientation
+
     if config is None:
         config = Config()
     
@@ -292,7 +303,7 @@ def run_camera_optimization(
     provider_subdir = get_provider_subdir(shape_provider, texture_provider)
 
     # Define directory paths
-    flame_dir = os.path.join(data_dir, config.DIR_FLAME)
+    orientation_dir = os.path.join(data_dir, config.DIR_HEAD_ORIENTATION)
     view_aligned_dir = os.path.join(data_dir, config.DIR_VIEW_ALIGNED, provider_subdir)
     lmk_3d_dir = os.path.join(data_dir, config.DIR_LANDMARKS_3D, provider_subdir)
 
@@ -305,14 +316,18 @@ def run_camera_optimization(
         print(f"Skipping camera optimization (already exists): {target_id} -> {source_id}")
         return False
 
-    # Load orientation data
-    source_head_orientation_path = os.path.join(flame_dir, source_id, config.FILE_HEAD_ORIENTATION)
-    target_head_orientation_path = os.path.join(flame_dir, target_id, config.FILE_HEAD_ORIENTATION)
+    # Compute / load head orientation via FLAMEFitter
+    source_image_path = os.path.join(data_dir, "image", f"{source_id}.png")
+    target_image_path = os.path.join(data_dir, "image", f"{target_id}.png")
 
-    with open(source_head_orientation_path, 'r') as f:
-        source_head_orientation_data = json.load(f)
-    with open(target_head_orientation_path, 'r') as f:
-        target_head_orientation_data = json.load(f)
+    source_head_orientation_data = compute_head_orientation(
+        image_path=source_image_path,
+        cache_dir=os.path.join(orientation_dir, source_id),
+    )
+    target_head_orientation_data = compute_head_orientation(
+        image_path=target_image_path,
+        cache_dir=os.path.join(orientation_dir, target_id),
+    )
 
     target_euler_rad = target_head_orientation_data['euler_angles_xyz_radians'][0]
     source_euler_rad = source_head_orientation_data['euler_angles_xyz_radians'][0]
@@ -404,6 +419,15 @@ def filter_ids(all_ids: list, config: Config) -> list:
 
 
 def prepare_pairs(data_dir: str, config: Config, pairs_csv_file: str = None) -> list:
+    """Load transfer pairs from ``pairs.csv``.
+
+    When ``lift_3d`` and ``head_diff_angle`` columns are fully populated the
+    values are trusted as-is (no recomputation).  Only rows with missing
+    values trigger FLAMEFitter-based orientation computation.
+
+    If no CSV is found an error is raised — the legacy fallback that
+    generated O(n²) cross-product pairs has been removed.
+    """
     # Check if we should read from CSV
     csv_path = None
     if pairs_csv_file is not None:
@@ -413,93 +437,65 @@ def prepare_pairs(data_dir: str, config: Config, pairs_csv_file: str = None) -> 
         if os.path.exists(default_csv):
             csv_path = default_csv
     
-    # If CSV file is available, read pairs from it
-    if csv_path is not None:
-        print(f"Reading pairs from CSV: {csv_path}")
-        pairs = []
-        rows_data = []
-        has_lift_3d_column = False
-        has_head_diff_angle_column = False
-        needs_update = False
+    if csv_path is None:
+        raise FileNotFoundError(
+            f"No pairs.csv found in {data_dir}. Please provide a pairs.csv file "
+            f"with columns: target_id, source_id, lift_3d, head_diff_angle"
+        )
+
+    print(f"Reading pairs from CSV: {csv_path}")
+    pairs = []
+    rows_data = []
+    has_lift_3d_column = False
+    has_head_diff_angle_column = False
+    needs_update = False
+    
+    with open(csv_path, 'r') as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        has_lift_3d_column = 'lift_3d' in fieldnames if fieldnames else False
+        has_head_diff_angle_column = 'head_diff_angle' in fieldnames if fieldnames else False
         
-        with open(csv_path, 'r') as f:
-            reader = csv.DictReader(f)
-            fieldnames = reader.fieldnames
-            has_lift_3d_column = 'lift_3d' in fieldnames if fieldnames else False
-            has_head_diff_angle_column = 'head_diff_angle' in fieldnames if fieldnames else False
+        for row in reader:
+            target_id = row['target_id']
+            source_id = row['source_id']
             
-            for row in reader:
-                target_id = row['target_id']
-                source_id = row['source_id']
-                
-                # Check if lift_3d and head_diff_angle need to be computed
-                if (has_lift_3d_column and 'lift_3d' in row and row['lift_3d'] != '' and
-                    has_head_diff_angle_column and 'head_diff_angle' in row and row['head_diff_angle'] != ''):
-                    lift_3d = row['lift_3d'].lower() in ('true', '1', 'yes')
-                    head_diff_angle = float(row['head_diff_angle'])
-                else:
-                    # Compute lift_3d and head_diff_angle
-                    try:
-                        lift_3d, head_diff_angle = compute_lift_3d(data_dir, target_id, source_id, config)
-                        needs_update = True
-                    except Exception as e:
-                        print(f"Warning: Could not compute lift_3d for {target_id} -> {source_id}: {e}")
-                        lift_3d = False
-                        head_diff_angle = 0.0
-                        needs_update = True
-                
-                pairs.append((target_id, source_id, lift_3d))
-                row_data = {
-                    'target_id': target_id, 
-                    'source_id': source_id, 
-                    'lift_3d': str(lift_3d),
-                    'head_diff_angle': str(head_diff_angle)
-                }
-                rows_data.append(row_data)
-        
-        # Update CSV if lift_3d or head_diff_angle column was missing or had empty values
-        if needs_update or not has_lift_3d_column or not has_head_diff_angle_column:
-            print(f"Updating CSV with lift_3d and head_diff_angle columns: {csv_path}")
-            with open(csv_path, 'w', newline='') as f:
-                fieldnames = ['target_id', 'source_id', 'lift_3d', 'head_diff_angle']
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(rows_data)
-        
-        print(f"Loaded {len(pairs)} pairs from CSV")
-        return pairs
+            # Trust pre-computed values when both columns are present and populated
+            if (has_lift_3d_column and 'lift_3d' in row and row['lift_3d'] != '' and
+                has_head_diff_angle_column and 'head_diff_angle' in row and row['head_diff_angle'] != ''):
+                lift_3d = row['lift_3d'].lower() in ('true', '1', 'yes')
+                head_diff_angle = float(row['head_diff_angle'])
+            else:
+                # Compute lift_3d and head_diff_angle via FLAMEFitter
+                try:
+                    lift_3d, head_diff_angle = compute_lift_3d(data_dir, target_id, source_id, config)
+                    needs_update = True
+                except Exception as e:
+                    print(f"Warning: Could not compute lift_3d for {target_id} -> {source_id}: {e}")
+                    lift_3d = False
+                    head_diff_angle = 0.0
+                    needs_update = True
+            
+            pairs.append((target_id, source_id, lift_3d))
+            row_data = {
+                'target_id': target_id, 
+                'source_id': source_id, 
+                'lift_3d': str(lift_3d),
+                'head_diff_angle': str(head_diff_angle)
+            }
+            rows_data.append(row_data)
     
-    # Fall back to generating pairs from all IDs
-    print("No CSV file found, generating pairs from all IDs")
-    all_ids = os.listdir(os.path.join(data_dir, config.DIR_MATTED_IMAGE))
-    all_ids = [f.split(".")[0] for f in all_ids]
+    # Update CSV if lift_3d or head_diff_angle column was missing or had empty values
+    if needs_update or not has_lift_3d_column or not has_head_diff_angle_column:
+        print(f"Updating CSV with lift_3d and head_diff_angle columns: {csv_path}")
+        with open(csv_path, 'w', newline='') as f:
+            fieldnames = ['target_id', 'source_id', 'lift_3d', 'head_diff_angle']
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows_data)
     
-    target_ids = filter_ids(all_ids, config)
-    source_ids = filter_ids(all_ids, config)
-
-    # target_ids = [t for t in target_ids if not t.startswith("sample_") and not t.startswith("side") and not t.startswith("n")]
-    # source_ids = [s for s in source_ids if not s.startswith("sample_") and not s.startswith("side") and not s.startswith("n")]
-
-    random.shuffle(target_ids)
-    random.shuffle(source_ids)
-
-    # Create all possible pairs where source and target are different    
-    pairs = list(itertools.product(target_ids, source_ids))
-    pairs = [(target, source) for target, source in pairs if target != source]
-
-    random.shuffle(pairs)
-    
-    # Compute lift_3d for each pair
-    pairs_with_lift_3d = []
-    for target_id, source_id in pairs:
-        try:
-            lift_3d, head_diff_angle = compute_lift_3d(data_dir, target_id, source_id, config)
-        except Exception as e:
-            print(f"Warning: Could not compute lift_3d for {target_id} -> {source_id}: {e}")
-            lift_3d = False
-        pairs_with_lift_3d.append((target_id, source_id, lift_3d))
-    
-    return pairs_with_lift_3d
+    print(f"Loaded {len(pairs)} pairs from CSV")
+    return pairs
 
 
 if __name__ == "__main__":

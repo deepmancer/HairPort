@@ -73,11 +73,17 @@ def process_shape_mesh(
 def process_shape_meshes(
     textured_mesh_dir: Path,
     texture_provider: str,
-    pixel3dmm_output_dir: Path,
     data_dir: Path,
     frontalize: bool = False,
 ):
-    """Process 3D landmark fitting for all samples in random order."""
+    """Process 3D landmark fitting for all samples in random order.
+    
+    Head orientation is computed via FLAMEFitter (SHeaP) and cached under
+    ``<data_dir>/head_orientation/<sample_id>/head_orientation.json``.
+    This replaces the legacy pixel3dmm dependency.
+    """
+    from hairport.core.flame_fitting import compute_head_orientation
+
     all_sample_ids = os.listdir(str(textured_mesh_dir))
     sample_ids = all_sample_ids
     
@@ -90,12 +96,16 @@ def process_shape_meshes(
         return
     to_frontalize_ids = []
     meshes_dir = str(Path(data_dir) / "hi3dgen_copy")
-    for folder in os.listdir(meshes_dir):
-        shape_mesh_path = os.path.join(meshes_dir, folder, "shape_mesh.glb")
-        if os.path.exists(shape_mesh_path):
-            file_size_mb = os.path.getsize(shape_mesh_path) / (1024 * 1024)
-            if file_size_mb >= 25:
-                to_frontalize_ids.append(folder)
+    if os.path.isdir(meshes_dir):
+        for folder in os.listdir(meshes_dir):
+            shape_mesh_path = os.path.join(meshes_dir, folder, "shape_mesh.glb")
+            if os.path.exists(shape_mesh_path):
+                file_size_mb = os.path.getsize(shape_mesh_path) / (1024 * 1024)
+                if file_size_mb >= 25:
+                    to_frontalize_ids.append(folder)
+
+    # Lazily-initialised FLAMEFitter (shared across all samples)
+    fitter = None
 
     for sample_id in tqdm(sample_ids, desc="Frontalizing Meshes", unit="sample"):
         target_textured_mesh_path = textured_mesh_dir / sample_id / "shape_mesh.glb"
@@ -107,24 +117,30 @@ def process_shape_meshes(
         if not target_textured_mesh_path.exists():
             continue
 
-        head_orientation_path = pixel3dmm_output_dir / sample_id / "head_orientation.json"
-        if not head_orientation_path.exists():
-            logger.warning(f"Orientation file not found for {sample_id}, skipping")
+        # Resolve head orientation via FLAMEFitter (cached)
+        image_path = data_dir / "image" / f"{sample_id}.png"
+        cache_dir = data_dir / "head_orientation" / sample_id
+        if not image_path.exists():
+            logger.warning(f"Source image not found for {sample_id}, skipping orientation")
             continue
-        
-        with open(head_orientation_path, 'r') as f:
-            head_orientation_dict = json.load(f)
-            euler_rad = head_orientation_dict.get("euler_angles_xyz_radians", [[0.0, 0.0, 0.0]])[0]
-            # euler_rad[0] = 0.0
-            # euler_rad[2] = 0.0
-            # Disable all rotation adjustments
-            # euler_rad = [0.0, 0.0, 0.0]
-            
-            process_shape_mesh(
-                target_textured_mesh_path=str(target_textured_mesh_path),
-                target_rotation_euler_rad=euler_rad,
-                frontalize=frontalize,
+
+        try:
+            head_orientation_dict = compute_head_orientation(
+                image_path=image_path,
+                cache_dir=cache_dir,
+                fitter=fitter,
             )
+        except Exception as e:
+            logger.warning(f"Could not compute head orientation for {sample_id}: {e}")
+            continue
+
+        euler_rad = head_orientation_dict.get("euler_angles_xyz_radians", [[0.0, 0.0, 0.0]])[0]
+        
+        process_shape_mesh(
+            target_textured_mesh_path=str(target_textured_mesh_path),
+            target_rotation_euler_rad=euler_rad,
+            frontalize=frontalize,
+        )
 
 def main(
     data_dir: str, 
@@ -139,7 +155,6 @@ def main(
             "Invalid combination: texture_provider cannot be 'hunyuan' when shape_provider is 'hi3dgen'"
         )
     
-    pixel3dmm_output_dir = Path(data_dir) / "pixel3dmm_output"
     logger.info(f"Starting 3D landmark fitting with shape_provider='{shape_provider}', "
                 f"texture_provider='{texture_provider}'")
     
@@ -148,7 +163,6 @@ def main(
     process_shape_meshes(
         data_dir=output_dir,
         texture_provider=texture_provider,
-        pixel3dmm_output_dir=pixel3dmm_output_dir,
         textured_mesh_dir=output_dir / shape_provider
     )
         

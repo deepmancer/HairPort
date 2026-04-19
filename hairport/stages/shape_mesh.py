@@ -28,9 +28,9 @@ class ShapeMeshStage:
     """Simplify GLB meshes and optionally frontalize them.
 
     This stage:
-    1. Loads the shapes produced by hi3dgen / hunyuan
+    1. Loads the user-provided 3D head meshes
     2. Simplifies them (quadric decimation)
-    3. Optionally frontalizes using pixel3dmm head orientation
+    3. Optionally frontalizes using FLAME-based head orientation
     """
 
     def run(
@@ -51,7 +51,7 @@ class ShapeMeshStage:
         texture_provider : str
             ``"mvadapter"`` or ``"hunyuan"``.
         frontalize : bool
-            Whether to frontalize meshes using pixel3dmm orientation data.
+            Whether to frontalize meshes using FLAME orientation data.
         """
         from hairport.postprocess_shape_mesh import main as _run
 

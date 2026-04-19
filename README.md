@@ -26,7 +26,7 @@ HairPort processes images through a nine-stage pipeline:
 |---|-------|-------------|
 | 1 | **Baldify** | Generate realistic bald portraits using FLUX LoRA in-context editing (via the Bald Converter). |
 | 2 | **Caption** | Outpaint the bald images and generate text descriptions using Qwen Image-Edit. |
-| 3 | **Shape Mesh** | Simplify and frontalize 3D head meshes from Hi3DGen or Hunyuan. |
+| 3 | **Shape Mesh** | Simplify and frontalize user-provided 3D head meshes. |
 | 4 | **Landmark 3D** | Estimate 3D facial landmarks via multi-view Blender renders + MediaPipe fusion. |
 | 5 | **Align View** | Align the target hairstyle to the source viewpoint through camera optimization. |
 | 6 | **Render View** | Generate textured multi-view images of the target hair using MV-Adapter + SDXL. |
@@ -100,11 +100,13 @@ pip install -e .
 
 ### 4. Set up external submodules
 
-This clones CodeFormer, MV-Adapter, Hi3DGen, and SHeaP into `modules/`:
+This clones CodeFormer, MV-Adapter, and SHeaP into `modules/`:
 
 ```bash
 bash scripts/setup_submodules.sh
 ```
+
+> **Note:** Hi3DGen is **not** included as a submodule. 3D meshes must be generated externally and placed at the expected paths (see [Quick Start](#quick-start-transferring-a-hairstyle)).
 
 ### 5. Download FLAME assets
 
@@ -196,30 +198,35 @@ cp reference.png my_project/image/reference.png
 
 ### Step 2: Generate 3D head meshes (external prerequisite)
 
-HairPort requires a textured 3D head mesh for each identity. These are generated **externally** using [Hi3DGen](https://github.com/Stable-X/Hi3DGen) (or Hunyuan3D) from the input images:
+HairPort requires a textured 3D head mesh for each identity. These must be generated **externally** using any mesh generation tool (e.g. [Hi3DGen](https://github.com/Stable-X/Hi3DGen), Hunyuan3D, or your own pipeline) and placed at the expected paths:
 
 ```bash
-# Run Hi3DGen on each image to produce a .glb mesh, then place them as:
+# Each identity needs a GLB mesh at:
+# <data_dir>/<texture_provider>/<shape_provider>/<identity>/shape_mesh.glb
+#
+# With the default providers (mvadapter + hi3dgen):
 mkdir -p my_project/mvadapter/hi3dgen/source
 mkdir -p my_project/mvadapter/hi3dgen/reference
 
-# Each folder must contain a shape_mesh.glb file:
+# Place the GLB files:
 # my_project/mvadapter/hi3dgen/source/shape_mesh.glb
 # my_project/mvadapter/hi3dgen/reference/shape_mesh.glb
 ```
 
-> **Note:** Stage 3 (Shape Mesh) expects these meshes to already exist. It simplifies them but does not generate them from scratch.
+> **Note:** Stage 3 (Shape Mesh) simplifies and frontalizes meshes but does **not** generate them. Head orientation is computed automatically via FLAME fitting (SHeaP) — no external pixel3dmm or orientation data is required.
 
 ### Step 3: Create a pairs file
 
 Create `my_project/pairs.csv` to specify which transfers to perform. Each row defines a (target hairstyle → source face) pair:
 
 ```csv
-target_id,source_id
-reference,source
+target_id,source_id,lift_3d,head_diff_angle
+reference,source,True,0.98
 ```
 
 Here `target_id` is the identity whose **hair** you want (the reference), and `source_id` is the identity whose **face** you want to keep (the source). You can list multiple pairs.
+
+The `lift_3d` and `head_diff_angle` columns are optional — if omitted or left empty, they are computed automatically via FLAME fitting. When provided, they are trusted as-is (no recomputation), which is faster.
 
 ### Step 4: Run the pipeline
 
@@ -421,7 +428,7 @@ data_dir/
 ├── matted_image/                   # Background-removed images (auto-generated)
 ├── pairs.csv                       # ← INPUT: Transfer pairs (target_id, source_id)
 │
-├── mvadapter/hi3dgen/              # ← INPUT: 3D head meshes from Hi3DGen
+├── mvadapter/hi3dgen/              # ← INPUT: 3D head meshes (user-provided)
 │   ├── source/shape_mesh.glb
 │   └── reference/shape_mesh.glb
 │
@@ -453,10 +460,11 @@ data_dir/
 |--------|-----------|---------|
 | CodeFormer | [sczhou/CodeFormer](https://github.com/sczhou/CodeFormer) | Face super-resolution |
 | MV-Adapter | [huanngzh/MV-Adapter](https://github.com/huanngzh/MV-Adapter) | Multi-view generation adapter for SDXL |
-| Hi3DGen | [Stable-X/Hi3DGen](https://github.com/Stable-X/Hi3DGen) | 3D head reconstruction |
-| SHeaP | [deepmancer/SHeaP](https://github.com/deepmancer/SHeaP) | FLAME-based head segmentation |
+| SHeaP | [deepmancer/SHeaP](https://github.com/deepmancer/SHeaP) | FLAME-based head segmentation & orientation |
 
 These are cloned automatically by `scripts/setup_submodules.sh`.
+
+> **Note:** [Hi3DGen](https://github.com/Stable-X/Hi3DGen) (3D head reconstruction) is no longer bundled. Users must generate 3D meshes externally and place them at the expected paths.
 
 ### Key HuggingFace Models
 

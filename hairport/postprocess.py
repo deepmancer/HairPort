@@ -141,14 +141,19 @@ def fit_3d_landmarks(
 
 def _process_lmk_3d_fitting(
     lmk_3d_output_dir: Path,
-    pixel3dmm_output_dir: Path,
     textured_mesh_dir: Path,
     texture_provider: str,
     data_dir: Path,
     frontalize: bool = False,
 ):
-    """Process 3D landmark fitting for all samples in random order."""
-    all_sample_ids = os.listdir(str(pixel3dmm_output_dir))
+    """Process 3D landmark fitting for all samples in random order.
+
+    Head orientation is computed via FLAMEFitter (SHeaP) and cached under
+    ``<data_dir>/head_orientation/<sample_id>/head_orientation.json``.
+    """
+    from hairport.core.flame_fitting import compute_head_orientation
+
+    all_sample_ids = os.listdir(str(textured_mesh_dir))
     sample_ids = all_sample_ids
     
     # Randomize the order of sample processing for parallel runs
@@ -160,50 +165,50 @@ def _process_lmk_3d_fitting(
         return
     to_frontalize_ids = []
     meshes_dir = str(Path(data_dir) / "hi3dgen_copy")
-    for folder in os.listdir(meshes_dir):
-        shape_mesh_path = os.path.join(meshes_dir, folder, "shape_mesh.glb")
-        if os.path.exists(shape_mesh_path):
-            file_size_mb = os.path.getsize(shape_mesh_path) / (1024 * 1024)
-            if file_size_mb >= 25:
-                to_frontalize_ids.append(folder)
+    if os.path.isdir(meshes_dir):
+        for folder in os.listdir(meshes_dir):
+            shape_mesh_path = os.path.join(meshes_dir, folder, "shape_mesh.glb")
+            if os.path.exists(shape_mesh_path):
+                file_size_mb = os.path.getsize(shape_mesh_path) / (1024 * 1024)
+                if file_size_mb >= 25:
+                    to_frontalize_ids.append(folder)
+
+    fitter = None  # lazily initialised FLAMEFitter
 
     for sample_id in tqdm(sample_ids, desc="Fitting 3D landmarks", unit="sample"):
-        # Determine mesh path based on texture provider
-        # if sample_id.startswith('n') or sample_id.startswith('sample_'):
-        #     # Skip invalid sample IDs
-        #     logger.warning(f"Skipping invalid sample ID: {sample_id}")
-        #     continue
         target_textured_mesh_path = textured_mesh_dir / sample_id / "textured_mesh.glb"
-        # if sample_id in to_frontalize_ids:
-        #     frontalize = True
-        # else:
-        #     frontalize = False
 
         if not target_textured_mesh_path.exists():
             continue
         
-        head_orientation_path = pixel3dmm_output_dir / sample_id / "head_orientation.json"
-        if not head_orientation_path.exists():
-            logger.warning(f"Orientation file not found for {sample_id}, skipping")
+        # Compute head orientation via FLAMEFitter (cached)
+        image_path = data_dir / "image" / f"{sample_id}.png"
+        cache_dir = data_dir / "head_orientation" / sample_id
+        if not image_path.exists():
+            logger.warning(f"Source image not found for {sample_id}, skipping orientation")
             continue
-        
-        with open(head_orientation_path, 'r') as f:
-            head_orientation_dict = json.load(f)
-            euler_rad = head_orientation_dict.get("euler_angles_xyz_radians", [[0.0, 0.0, 0.0]])[0]
-            # euler_rad[0] = 0.0
-            # euler_rad[2] = 0.0
-            # Disable all rotation adjustments
-            # euler_rad = [0.0, 0.0, 0.0]
-            
-            sample_lmk_3d_output_dir = lmk_3d_output_dir / sample_id
-            sample_lmk_3d_output_dir.mkdir(parents=True, exist_ok=True)
 
-            fit_3d_landmarks(
-                lmk_3d_output_dir=str(sample_lmk_3d_output_dir),
-                target_textured_mesh_path=str(target_textured_mesh_path),
-                target_rotation_euler_rad=euler_rad,
-                frontalize=frontalize,
+        try:
+            head_orientation_dict = compute_head_orientation(
+                image_path=image_path,
+                cache_dir=cache_dir,
+                fitter=fitter,
             )
+        except Exception as e:
+            logger.warning(f"Could not compute head orientation for {sample_id}: {e}")
+            continue
+
+        euler_rad = head_orientation_dict.get("euler_angles_xyz_radians", [[0.0, 0.0, 0.0]])[0]
+        
+        sample_lmk_3d_output_dir = lmk_3d_output_dir / sample_id
+        sample_lmk_3d_output_dir.mkdir(parents=True, exist_ok=True)
+
+        fit_3d_landmarks(
+            lmk_3d_output_dir=str(sample_lmk_3d_output_dir),
+            target_textured_mesh_path=str(target_textured_mesh_path),
+            target_rotation_euler_rad=euler_rad,
+            frontalize=frontalize,
+        )
 
 def main(
     data_dir: str, 
@@ -228,10 +233,8 @@ def main(
         texture_provider=texture_provider
     )
 
-    pixel3dmm_output_dir = output_dir / 'pixel3dmm_output'
     _process_lmk_3d_fitting(
         lmk_3d_output_dir=lmk_3d_dir,
-        pixel3dmm_output_dir=pixel3dmm_output_dir,
         textured_mesh_dir=textured_mesh_dir,
         texture_provider=texture_provider,
         data_dir=output_dir,

@@ -13,6 +13,9 @@ def __getattr__(name: str):
     if name == "FLAMEFitter":
         from hairport.core.flame_fitting import FLAMEFitter
         return FLAMEFitter
+    if name == "compute_head_orientation":
+        from hairport.core.flame_fitting import compute_head_orientation
+        return compute_head_orientation
     if name == "CaptionerPipeline":
         from hairport.core.captioner import CaptionerPipeline
         return CaptionerPipeline
@@ -29,6 +32,7 @@ __all__ = [
     "BackgroundRemover",
     "CaptionerPipeline",
     "CodeFormerEnhancer",
+    "compute_head_orientation",
     "FacialLandmarkDetector",
     "FLAMEFitter",
     "SAMMaskExtractor",

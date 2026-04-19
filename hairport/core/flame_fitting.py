@@ -450,4 +450,75 @@ class FLAMEFitter:
         return np.clip(overlay, 0, 255).astype(np.uint8)
 
 
-__all__ = ["FLAMEFitter", "_SHEAP_AVAILABLE"]
+def compute_head_orientation(
+    image_path: Union[str, Path],
+    cache_dir: Union[str, Path, None] = None,
+    fitter: Optional[FLAMEFitter] = None,
+    force: bool = False,
+) -> Dict[str, Any]:
+    """Compute head orientation for a portrait image, with optional JSON caching.
+
+    This replaces the legacy dependency on ``pixel3dmm_output/<id>/head_orientation.json``.
+    If *cache_dir* is given and the cache file already exists (and *force* is
+    ``False``), the cached result is returned without running FLAME fitting.
+
+    Parameters
+    ----------
+    image_path : str | Path
+        Path to the input portrait image.
+    cache_dir : str | Path | None
+        If given, ``head_orientation.json`` is read/written here.
+    fitter : FLAMEFitter | None
+        Reusable fitter instance.  One is created (and kept alive) when
+        ``None`` is passed.
+    force : bool
+        Re-compute even when a cached file exists.
+
+    Returns
+    -------
+    dict
+        ``{"euler_angles_xyz_radians": [[x, y, z]], ...}`` — same schema as
+        the legacy pixel3dmm output.
+    """
+    cache_path: Optional[Path] = None
+    if cache_dir is not None:
+        cache_dir = Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = cache_dir / "head_orientation.json"
+        if not force and cache_path.exists():
+            with open(cache_path, "r") as f:
+                return json.load(f)
+
+    if fitter is None:
+        fitter = FLAMEFitter()
+
+    result = fitter.fit_flame(image_path)
+    if result is None:
+        logger.warning("No face detected in %s — returning zero orientation.", image_path)
+        orientation = {
+            "euler_angles_xyz_radians": [[0.0, 0.0, 0.0]],
+            "forward": [0.0, 0.0, -1.0],
+            "up": [0.0, 1.0, 0.0],
+            "right": [1.0, 0.0, 0.0],
+        }
+    else:
+        _flame_mask, result_dict = result
+        ho = result_dict["head_orientation"]
+        # Wrap in a list to match the legacy pixel3dmm schema:
+        # { "euler_angles_xyz_radians": [[x, y, z]] }
+        orientation = {
+            "euler_angles_xyz_radians": [ho["euler_xyz_radians"]],
+            "forward": ho["forward"],
+            "up": ho["up"],
+            "right": ho["right"],
+        }
+
+    if cache_path is not None:
+        with open(cache_path, "w") as f:
+            json.dump(orientation, f, indent=2)
+        logger.info("Cached head orientation → %s", cache_path)
+
+    return orientation
+
+
+__all__ = ["FLAMEFitter", "compute_head_orientation", "_SHEAP_AVAILABLE"]

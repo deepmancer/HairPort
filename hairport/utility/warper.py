@@ -1306,9 +1306,14 @@ def main(source_id: str, target_id: str, data_dir: str, visualize: bool = False,
     source_lmk_path = os.path.join(BALD_DATA_DIR, "lmk", source_id, "landmarks.npy")
     source_lmk_data = np.load(source_lmk_path, allow_pickle=True).item()
     
-    source_flame_data_dir = os.path.join(BALD_DATA_DIR, "pixel3dmm_output", source_id)
-    source_head_mask_path = os.path.join(source_flame_data_dir, "flame_segmentation.png")
-    source_head_mask = Image.open(source_head_mask_path).convert('L')
+    # Compute FLAME head mask for source via FLAMEFitter
+    from hairport.core.flame_fitting import FLAMEFitter
+    flame_fitter = FLAMEFitter()
+    source_flame_result = flame_fitter.fit_flame(source_image)
+    if source_flame_result is not None:
+        source_head_mask = Image.fromarray(source_flame_result[0]).convert('L')
+    else:
+        source_head_mask = Image.new('L', source_image.size, 0)
     
     # Save debug: source images
     if debug:
@@ -1323,9 +1328,12 @@ def main(source_id: str, target_id: str, data_dir: str, visualize: bool = False,
     target_lmk_path = os.path.join(VIEW_ALIGNED_DATA_DIR, "lmk", "refined_view_aligned", "landmarks.npy")
     target_lmk_data = np.load(target_lmk_path, allow_pickle=True).item()
     
-    target_flame_data_dir = os.path.join(VIEW_ALIGNED_DATA_DIR, "pixel3dmm_output", "refined_view_aligned")
-    target_head_mask_path = os.path.join(target_flame_data_dir, "flame_segmentation.png")
-    target_head_mask = Image.open(target_head_mask_path).convert('L')
+    # Compute FLAME head mask for target via FLAMEFitter
+    target_flame_result = flame_fitter.fit_flame(target_image)
+    if target_flame_result is not None:
+        target_head_mask = Image.fromarray(target_flame_result[0]).convert('L')
+    else:
+        target_head_mask = Image.new('L', target_image.size, 0)
     
     # Save debug: target images
     if debug:
@@ -1567,7 +1575,7 @@ def main(source_id: str, target_id: str, data_dir: str, visualize: bool = False,
 
 if __name__ == "__main__":
     # Process all subdirectories in the data directory
-    data_dir = "/localhome/aaa324/Project/MultiView/pixel3dmm/io/outputs/"
+    data_dir = "outputs/"
     
     # Get all subdirectories in the bald/wo_seg directory
     bald_dir = os.path.join(data_dir, "bald", "wo_seg", "image")

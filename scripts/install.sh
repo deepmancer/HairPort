@@ -121,7 +121,7 @@ pip install omegaconf
 # ── Pin numpy last (some packages may override it) ────────────────
 pip install numpy==1.26.4
 
-# ── Setup submodules (CodeFormer, MV-Adapter, Hi3DGen, SHeaP) ────
+# ── Setup submodules (CodeFormer, MV-Adapter, SHeaP) ────
 # bash "${SCRIPT_DIR}/setup_submodules.sh"
 
 # ── Install HairPort itself ───────────────────────────────────────

@@ -59,12 +59,6 @@ fi
 cd "${REPO_ROOT}"
 
 
-# ── Hi3DGen ────────────────────────────────────────────────────────
-clone_or_update "Hi3DGen" "git@github.com:deepmancer/Hi3DGen.git"
-cd "${MODULES_DIR}/Hi3DGen"
-rm -rf NiRNE 
-git clone git@github.com:lzt02/NiRNE.git
-conda activate hairport && python download_nirne_weights.py
 cd "${REPO_ROOT}"
 
 # ── SHeaP ──────────────────────────────────────────────────────────

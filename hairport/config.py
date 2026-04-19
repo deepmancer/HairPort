@@ -52,7 +52,6 @@ class PathsConfig:
     codeformer_weights: str = "${paths.assets_dir}/weights/codeformer"
     mv_adapter_module: str = "${paths.modules_dir}/MV-Adapter"
     sheap_module: str = "${paths.modules_dir}/SHeaP"
-    hi3dgen_module: str = "${paths.modules_dir}/Hi3DGen"
     mediapipe_flame_embedding: str = (
         "${paths.assets_dir}/body_models/landmarks/flame/"
         "mediapipe_landmark_embedding.npz"
@@ -298,7 +297,7 @@ class DatasetConfig:
     dir_matted_image: str = "matted_image"
     dir_landmarks: str = "lmk"
     dir_landmarks_3d: str = "lmk_3d"
-    dir_pixel3dmm: str = "pixel3dmm_output"
+    dir_head_orientation: str = "head_orientation"
     dir_view_aligned: str = "view_aligned"
     dir_source_outpainted: str = "source_outpainted"
     dir_bald: str = "bald"

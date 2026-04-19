@@ -1460,14 +1460,13 @@ def process_view_aligned_folder(
                                 config=config,
                             )
                         else:
-                            # For 3D unaware: try to load from pixel3dmm, otherwise compute
-                            precomputed_flame_path = data_dir / f"{image_folder}_pixel3dmm_output" / target_id / "flame_segmentation.png"
+                            # For 3D unaware: compute FLAME segmentation directly via FLAMEFitter
                             target_flame_output_dir = data_dir / f"{image_folder}_flame_output" / target_id
                             target_flame_mask = get_or_compute_flame_segmentation(
                                 image=target_data['image'],
                                 output_dir=target_flame_output_dir,
                                 flame_fitter=flame_fitter,
-                                precomputed_path=precomputed_flame_path,
+                                precomputed_path=None,
                                 config=config,
                             )
                         

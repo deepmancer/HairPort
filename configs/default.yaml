@@ -22,7 +22,6 @@ paths:
   codeformer_weights: ${paths.assets_dir}/weights/codeformer
   mv_adapter_module: ${paths.modules_dir}/MV-Adapter
   sheap_module: ${paths.modules_dir}/SHeaP
-  hi3dgen_module: ${paths.modules_dir}/Hi3DGen
   mediapipe_flame_embedding: ${paths.assets_dir}/body_models/landmarks/flame/mediapipe_landmark_embedding.npz
 
 # ---- Model IDs / HuggingFace references ----
@@ -231,7 +230,7 @@ dataset:
   dir_matted_image: matted_image
   dir_landmarks: lmk
   dir_landmarks_3d: lmk_3d
-  dir_pixel3dmm: pixel3dmm_output
+  dir_head_orientation: head_orientation
   dir_view_aligned: view_aligned
   dir_source_outpainted: source_outpainted
   dir_bald: bald
