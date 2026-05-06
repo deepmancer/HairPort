@@ -1,104 +1,143 @@
-# HairPort
+<h1 align="center">HairPort</h1>
 
-**In-context 3D-Aware Hair Import and Transfer for Images**
+<p align="center">
+  <strong>In-context 3D-Aware Hair Import and Transfer for Images</strong>
+  <br>
+  <strong>ACM SIGGRAPH 2026</strong>
+  <br>
+  A. Heidari, A. Alimohammadi, W. Michel Pinto Lira, A. Bar-Lev, and A. Mahdavi-Amiri
+</p>
 
-> Bald Converters Model Weights: https://huggingface.co/deepmancer/bald_konverter
+<p align="center">
+  <img alt="SIGGRAPH 2026" src="https://img.shields.io/badge/SIGGRAPH-2026-4c6fff">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-2ea44f"></a>
+  <img alt="Python >= 3.10" src="https://img.shields.io/badge/Python-%3E%3D3.10-3776ab">
+  <img alt="CUDA recommended" src="https://img.shields.io/badge/CUDA-recommended-76b900">
+  <img alt="Source preview" src="https://img.shields.io/badge/Release-source%20preview-f0ad4e">
+</p>
 
-> Baldy Dataset: https://huggingface.co/datasets/deepmancer/baldy
+<p align="center">
+  <img alt="Paper coming soon" src="https://img.shields.io/badge/Paper-coming%20soon-lightgrey?style=for-the-badge">
+  <a href="https://deepmancer.github.io/HairPort/"><img alt="Project page" src="https://img.shields.io/badge/Project%20Page-live-2ea44f?style=for-the-badge"></a>
+  <img alt="Video coming soon" src="https://img.shields.io/badge/Video-coming%20soon-lightgrey?style=for-the-badge">
+  <a href="https://huggingface.co/deepmancer/bald_konverter"><img alt="Bald Converter weights" src="https://img.shields.io/badge/Weights-Bald%20Converter-ffcc4d?style=for-the-badge"></a>
+  <a href="https://huggingface.co/datasets/deepmancer/baldy"><img alt="Baldy dataset" src="https://img.shields.io/badge/Dataset-Baldy-ff69b4?style=for-the-badge"></a>
+</p>
 
-Our codebase is still being finalized and will be runnable soon.
+HairPort transfers a reference hairstyle onto a source face while explicitly handling large pose and scale differences through 3D-aware alignment before image synthesis.
 
 ---
 
-## Abstract
+## News
+
+- **May 2026:** HairPort was accepted to **ACM SIGGRAPH 2026**.
+- **May 2026:** Launched the [HairPort project page](https://deepmancer.github.io/HairPort/).
+- **May 2026:** Initial HairPort source code released; packaging and dependency manifests will be finalized soon.
+- **May 2026:** Released the [Baldy dataset](https://huggingface.co/datasets/deepmancer/baldy) for paired bald/original image training.
+- **May 2026:** Released the [Bald Converter LoRA weights](https://huggingface.co/deepmancer/bald_konverter).
+
+---
+
+## Highlights
+
+| Capability | Why it matters |
+|------------|----------------|
+| **3D-aware transfer** | Reconstructs and re-renders the reference hairstyle from the source viewpoint before synthesis. |
+| **Large pose and scale gaps** | Designed for transfers where simple 2D warping or copy-paste editing breaks down. |
+| **Identity preservation** | Separates source hair removal from final hairstyle synthesis to keep the source face stable. |
+| **Bald Converter** | Uses FLUX LoRA in-context editing to produce realistic bald source portraits. |
+| **Baldy dataset** | Introduces 6,400 paired bald/original images for training the Bald Converter. |
+| **Modular pipeline** | Exposes each stage separately, making it easier to inspect, debug, extend, or swap components. |
+
+---
+
+## Results Teaser
+
+<p align="center">
+  <img src="assets/images/teaser.png" alt="HairPort transfers hairstyles across identities, poses, scales, and styles" width="100%">
+  <br>
+  <sub><b>Figure 1.</b> HairPort transfers hairstyles across challenging identity, pose, scale, and style differences.</sub>
+</p>
+
+---
+
+## Method At A Glance
+
+<p align="center">
+  <img src="assets/images/paper_method.png" alt="HairPort method overview: bald conversion, 3D-aware transfer, and final hair synthesis" width="100%">
+  <br>
+  <sub><b>Figure 2.</b> HairPort removes source hair, aligns the reference hairstyle in 3D, and synthesizes the final transfer from source-aligned hair evidence.</sub>
+</p>
+
+<p align="center">
+  <img src="assets/images/method.png" alt="Baldy dataset generation and Bald Converter finetuning process" width="100%">
+  <br>
+  <sub><b>Figure 3.</b> Baldy dataset generation and LoRA-based Bald Converter finetuning for in-context bald generation.</sub>
+</p>
+
+<details>
+<summary><b>Paper Abstract</b></summary>
 
 Transferring hairstyles between images is an important but challenging task in computer graphics, computer vision, and visual effects. It enables users to explore new looks without physically altering their hair, with applications in virtual try-on systems, augmented reality, and entertainment. Most prior works operate best under small pose gaps, and they fall short under large viewpoint and scale differences, where missing hair content must be synthesized rather than transferred.
 
 We propose **HairPort**, a 3D-aware hairstyle transfer framework that addresses these issues by explicitly separating hair removal from transfer and enforcing geometric consistency before synthesis. We introduce a **Bald Converter**, which produces realistic bald versions of faces through LoRA-based in-context adaptation of FLUX. To train the Bald Converter, we introduce a new dataset, **Baldy**, containing 6,400 paired bald and original images across diverse identities and conditions. We also use a **3D-Aware Transfer Pipeline** that reconstructs and re-renders the reference hairstyle from the target viewpoint before compositing it onto the source image. Being 3D-aware, our method supports large pose and scale discrepancies between the source and target. With these components in place, we employ a conditional flow-matching generator to synthesize the final image conditioned on the bald source, the pose-aligned hair rendering, the original reference image, and a text prompt. Together, our method enables accurate, pose-consistent, and identity-preserving hairstyle transfer, outperforming existing methods both qualitatively and quantitatively.
 
----
-
-## Pipeline Overview
-
-HairPort processes images through a nine-stage pipeline:
-
-| # | Stage | Description |
-|---|-------|-------------|
-| 1 | **Baldify** | Generate realistic bald portraits using FLUX LoRA in-context editing (via the Bald Converter). |
-| 2 | **Caption** | Outpaint the bald images and generate text descriptions using Qwen Image-Edit. |
-| 3 | **Shape Mesh** | Simplify and frontalize user-provided 3D head meshes. |
-| 4 | **Landmark 3D** | Estimate 3D facial landmarks via multi-view Blender renders + MediaPipe fusion. |
-| 5 | **Align View** | Align the target hairstyle to the source viewpoint through camera optimization. |
-| 6 | **Render View** | Generate textured multi-view images of the target hair using MV-Adapter + SDXL. |
-| 7 | **Enhance View** | Refine rendered views with FLUX.2 Klein 9B img2img + CodeFormer face SR. |
-| 8 | **Blend Hair** | Warp and Poisson-blend the enhanced hair onto the bald source. |
-| 9 | **Transfer Hair** | Final compositing via conditional FLUX.2 Klein 9B generation (3D-aware + 3D-unaware). |
+</details>
 
 ---
 
-## Project Structure
+## Repository Status
 
-```
-HairPort/
-├── configs/
-│   └── default.yaml                # Centralized YAML configuration
-├── scripts/
-│   └── setup_submodules.sh         # Clone external git dependencies
-├── assets/                         # Model weights & FLAME data (not in git)
-│   ├── flame/FLAME2020/
-│   ├── body_models/landmarks/flame/
-│   └── checkpoints/
-├── hairport/
-│   ├── config.py                   # OmegaConf-based config system
-│   ├── pipeline.py                 # Pipeline orchestrator (HairPortPipeline)
-│   ├── data.py                     # DatasetManager — type-safe path resolution
-│   ├── stages/                     # 9 pipeline stages (each a runnable module)
-│   ├── core/                       # Shared components (BG removal, SAM, FLAME, etc.)
-│   ├── bald_konverter/             # Bald conversion subpackage
-│   ├── fit_lmk/                    # 3D facial landmark estimation
-│   ├── utility/                    # Blender rendering, warping, outpainting
-│   └── postprocessing/             # Hair transfer & mask helpers
-├── pyproject.toml
-├── LICENSE
-└── README.md
-```
-
----
-
-## Requirements
-
-- **Python** ≥ 3.10
-- **CUDA GPU** — most stages require a CUDA-capable GPU (≥24 GB VRAM recommended)
-- **Blender** ≥ 4.0 — used for multi-view rendering in stages 4 and 6 (installed separately or via `pip install bpy`)
+> **Official source preview.** This repository contains the official SIGGRAPH 2026 implementation snapshot, including the pipeline source, configuration, asset layout, README figures, Bald Converter links, and dataset links.
+>
+> Packaging is still being finalized: this snapshot does **not** include `pyproject.toml`, `setup.py`, `setup.cfg`, a pinned dependency manifest, or installed console-script entry points. For now, run commands from the repository root with `python -m ...` and set `PYTHONPATH` as shown below.
 
 ---
 
 ## Installation
 
-### 1. Create a conda environment
+### Requirements
+
+- **Python** >= 3.10
+- **CUDA-capable GPU** recommended; most stages are GPU-heavy and >=24 GB VRAM is recommended
+- **Blender** >= 4.0 for multi-view rendering in 3D landmark and rendering stages
+- **Hugging Face access** for auto-downloaded model weights
+
+### 1. Create an environment
 
 ```bash
 conda create -n hairport python=3.11 -y
 conda activate hairport
 ```
 
-### 2. Install PyTorch (with CUDA)
+### 2. Install PyTorch
 
-Follow the [official instructions](https://pytorch.org/get-started/locally/) for your CUDA version. For example:
+Install the PyTorch build matching your CUDA version. Example for CUDA 12.4:
 
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ```
 
-### 3. Install HairPort
+### 3. Get HairPort
 
 ```bash
 git clone https://github.com/deepmancer/HairPort.git
 cd HairPort
-pip install -e .
+export PYTHONPATH="$PWD:${PYTHONPATH}"
 ```
 
-### 4. Set up external submodules
+### 4. Install remaining dependencies
+
+The current full dependency recipe is documented in [`scripts/install.sh`](scripts/install.sh). It is a full bootstrap/reference script rather than a minimal in-place package installer, so review it before running or adapting it. It includes system-level tools, source builds, CUDA-specific packages, and optional project utilities.
+
+```bash
+# From the parent directory that contains HairPort:
+cd ..
+bash HairPort/scripts/install.sh
+cd HairPort
+```
+
+### 5. Set up external modules
 
 This clones CodeFormer, MV-Adapter, and SHeaP into `modules/`:
 
@@ -106,26 +145,29 @@ This clones CodeFormer, MV-Adapter, and SHeaP into `modules/`:
 bash scripts/setup_submodules.sh
 ```
 
-> **Note:** Hi3DGen is **not** included as a submodule. 3D meshes must be generated externally and placed at the expected paths (see [Quick Start](#quick-start-transferring-a-hairstyle)).
+Hi3DGen is not bundled. Generate textured 3D head meshes externally and place them in the expected data layout before running the full transfer pipeline.
 
-### 5. Download FLAME assets
+### 6. Add FLAME assets
 
-1. Register and download **FLAME 2020** from [https://flame.is.tue.mpg.de](https://flame.is.tue.mpg.de).
-2. Place the files under `assets/flame/FLAME2020/`:
-   ```
-   assets/flame/FLAME2020/
-   ├── generic_model.pt
-   ├── eyelids.pt
-   └── FLAME_masks.pkl
-   ```
-3. Copy the MediaPipe–FLAME landmark mapping:
-   ```
-   assets/body_models/landmarks/flame/mediapipe_landmark_embedding.npz
-   ```
+1. Register and download **FLAME 2020** from [flame.is.tue.mpg.de](https://flame.is.tue.mpg.de).
+2. Place the required files at:
 
-### 6. HuggingFace models (auto-downloaded)
+```text
+assets/flame/FLAME2020/
+├── generic_model.pt
+├── eyelids.pt
+└── FLAME_masks.pkl
+```
 
-All other model weights (FLUX.2 Klein, SAM 3.1, BEN2, Qwen3-VL, etc.) are automatically downloaded from HuggingFace Hub on first use. Make sure you are logged in if any models require access:
+3. Place the MediaPipe-FLAME landmark mapping at:
+
+```text
+assets/body_models/landmarks/flame/mediapipe_landmark_embedding.npz
+```
+
+### 7. Log in to Hugging Face
+
+Most model weights are downloaded automatically on first use.
 
 ```bash
 huggingface-cli login
@@ -133,34 +175,178 @@ huggingface-cli login
 
 ---
 
+## Quick Start
+
+This example transfers the **reference hairstyle** from `reference.png` onto the **source face** in `source.png`.
+
+### 1. Prepare inputs
+
+```bash
+mkdir -p my_project/image
+mkdir -p my_project/matted_image
+
+cp source.png    my_project/image/source.png
+cp reference.png my_project/image/reference.png
+```
+
+The filename stem becomes the identity ID used throughout the pipeline.
+
+### 2. Add 3D head meshes
+
+HairPort requires a textured 3D head mesh for each identity. Generate these externally using a reconstruction tool such as Hi3DGen, Hunyuan3D, or your own pipeline.
+
+```bash
+mkdir -p my_project/mvadapter/hi3dgen/source
+mkdir -p my_project/mvadapter/hi3dgen/reference
+
+# Required files:
+# my_project/mvadapter/hi3dgen/source/shape_mesh.glb
+# my_project/mvadapter/hi3dgen/reference/shape_mesh.glb
+```
+
+Stage 3 simplifies and frontalizes meshes, but it does not generate them.
+
+### 3. Create transfer pairs
+
+Create `my_project/pairs.csv`:
+
+```csv
+target_id,source_id,lift_3d,head_diff_angle
+reference,source,True,0.98
+```
+
+`target_id` is the identity providing the **reference hairstyle**. `source_id` is the identity providing the **source face**. The `lift_3d` and `head_diff_angle` columns are optional; if omitted, they are computed automatically.
+
+### 4. Run HairPort
+
+```bash
+python -m hairport.pipeline \
+  --data_dir my_project \
+  --shape_provider hi3dgen \
+  --texture_provider mvadapter \
+  --bald_version w_seg
+```
+
+### 5. Find the output
+
+```text
+my_project/view_aligned/shape_hi3dgen__texture_mvadapter/reference_to_source/w_seg/3d_aware/transferred_klein/hair_restored.png
+```
+
+Depending on GPU memory and model cache state, the full pipeline can take several minutes per transfer pair.
+
+### Python API
+
+```python
+from hairport.pipeline import HairPortPipeline
+
+pipeline = HairPortPipeline(
+    data_dir="my_project",
+    shape_provider="hi3dgen",
+    texture_provider="mvadapter",
+    bald_version="w_seg",
+)
+
+results = pipeline.run()
+for r in results:
+    status = "OK" if r.success else "FAIL"
+    print(f"[{status}] {r.stage:20s} {r.duration_seconds:.1f}s")
+```
+
+---
+
+## Pipeline Stages
+
+| # | Stage | What happens |
+|---|-------|--------------|
+| 1 | **Baldify** | Generate a realistic bald source portrait using the Bald Converter. |
+| 2 | **Caption** | Outpaint bald images and generate text descriptions with Qwen Image-Edit. |
+| 3 | **Shape Mesh** | Simplify and frontalize externally generated 3D head meshes. |
+| 4 | **Landmark 3D** | Estimate 3D facial landmarks with Blender renders and MediaPipe fusion. |
+| 5 | **Align View** | Optimize camera alignment from reference hairstyle to source face. |
+| 6 | **Render View** | Generate textured target-hair views with MV-Adapter and SDXL. |
+| 7 | **Enhance View** | Refine rendered views with FLUX.2 Klein 9B and CodeFormer. |
+| 8 | **Blend Hair** | Warp and Poisson-blend enhanced hair onto the bald source. |
+| 9 | **Transfer Hair** | Synthesize the final 3D-aware hairstyle transfer. |
+
+Run a subset of stages when debugging:
+
+```bash
+# Resume from a stage
+python -m hairport.pipeline --data_dir my_project --start render_view
+
+# Run only selected stages
+python -m hairport.pipeline --data_dir my_project --only blend_hair transfer_hair
+
+# Skip selected stages
+python -m hairport.pipeline --data_dir my_project --skip shape_mesh landmark_3d
+```
+
+---
+
+## Data Layout
+
+HairPort expects inputs and writes intermediates under `data_dir`:
+
+```text
+data_dir/
+├── image/                          # Input portraits
+│   ├── source.png
+│   └── reference.png
+├── matted_image/                   # Background-removed images
+├── pairs.csv                       # Transfer pairs
+│
+├── mvadapter/hi3dgen/              # User-provided 3D head meshes
+│   ├── source/shape_mesh.glb
+│   └── reference/shape_mesh.glb
+│
+├── bald/
+│   └── w_seg/
+│       ├── image/                  # Bald portraits
+│       └── image_outpainted/       # Outpainted bald images
+├── lmk_3d/
+│   └── shape_hi3dgen__texture_mvadapter/
+│       └── <identity>/landmarks_3d.npy
+│
+└── view_aligned/
+    └── shape_hi3dgen__texture_mvadapter/
+        └── <target>_to_<source>/
+            ├── alignment/          # Rendered and enhanced views
+            └── <bald_version>/
+                └── 3d_aware/
+                    ├── warping/
+                    ├── blending/
+                    └── transferred_klein/
+                        └── hair_restored.png
+```
+
+---
+
 ## Configuration
 
-HairPort uses a centralized YAML configuration system backed by [OmegaConf](https://omegaconf.readthedocs.io/).
+HairPort uses a centralized [OmegaConf](https://omegaconf.readthedocs.io/) configuration. Defaults live in [`configs/default.yaml`](configs/default.yaml).
 
-The default configuration lives in [`configs/default.yaml`](configs/default.yaml) and covers:
-- **Global settings**: `device`, `seed`
-- **Paths**: asset directories, external module locations
-- **Models**: HuggingFace model IDs, LoRA weights, checkpoints
-- **Per-stage parameters**: resolution, inference steps, thresholds, etc.
-- **Prompts**: all text prompts used across stages
+Configuration covers:
 
-### Overriding configuration
+- Global settings: `device`, `seed`
+- Paths: asset directories and external module locations
+- Models: Hugging Face IDs, LoRA weights, checkpoints
+- Per-stage parameters: resolution, inference steps, thresholds
+- Prompts used across the pipeline
 
-There are three ways to override defaults, applied in this order of priority:
-
-**1. Custom YAML file:**
+Override defaults with a custom YAML file:
 
 ```bash
-hairport --config configs/my_experiment.yaml
+python -m hairport.pipeline --config configs/my_experiment.yaml
 ```
 
-**2. CLI dot-list overrides:**
+Or with dot-list CLI overrides:
 
 ```bash
-hairport --set device=cpu seed=123 enhance_view.num_inference_steps=6
+python -m hairport.pipeline --set device=cpu seed=123 enhance_view.num_inference_steps=6
 ```
 
-**3. Programmatic override:**
+Programmatic configuration:
 
 ```python
 from hairport.config import load_config, set_config
@@ -174,208 +360,27 @@ set_config(cfg)
 
 ---
 
-## Quick Start: Transferring a Hairstyle
+## Standalone Tools
 
-Suppose you have:
-- **source.png** — the person whose face you want to keep
-- **reference.png** — the person whose hairstyle you want to transfer
+### Individual stages
 
-Here's how to get the final transferred image.
-
-### Step 1: Prepare the data directory
-
-Create a working directory with the required input layout:
+Each stage can be run directly from the repository root:
 
 ```bash
-mkdir -p my_project/image
-mkdir -p my_project/matted_image
-
-# Place ALL images (both source and reference) in the image/ folder.
-# The filename stem becomes the identity ID.
-cp source.png    my_project/image/source.png
-cp reference.png my_project/image/reference.png
+python -m hairport.stages.baldify       --data_dir my_project
+python -m hairport.stages.caption       --data_dir my_project
+python -m hairport.stages.shape_mesh    --data_dir my_project
+python -m hairport.stages.landmark_3d   --data_dir my_project
+python -m hairport.stages.align_view    --data_dir my_project
+python -m hairport.stages.render_view   --data_dir my_project
+python -m hairport.stages.enhance_view  --data_dir my_project
+python -m hairport.stages.blend_hair    --data_dir my_project
+python -m hairport.stages.transfer_hair --data_dir my_project
 ```
 
-### Step 2: Generate 3D head meshes (external prerequisite)
+### Bald Converter
 
-HairPort requires a textured 3D head mesh for each identity. These must be generated **externally** using any mesh generation tool (e.g. [Hi3DGen](https://github.com/Stable-X/Hi3DGen), Hunyuan3D, or your own pipeline) and placed at the expected paths:
-
-```bash
-# Each identity needs a GLB mesh at:
-# <data_dir>/<texture_provider>/<shape_provider>/<identity>/shape_mesh.glb
-#
-# With the default providers (mvadapter + hi3dgen):
-mkdir -p my_project/mvadapter/hi3dgen/source
-mkdir -p my_project/mvadapter/hi3dgen/reference
-
-# Place the GLB files:
-# my_project/mvadapter/hi3dgen/source/shape_mesh.glb
-# my_project/mvadapter/hi3dgen/reference/shape_mesh.glb
-```
-
-> **Note:** Stage 3 (Shape Mesh) simplifies and frontalizes meshes but does **not** generate them. Head orientation is computed automatically via FLAME fitting (SHeaP) — no external pixel3dmm or orientation data is required.
-
-### Step 3: Create a pairs file
-
-Create `my_project/pairs.csv` to specify which transfers to perform. Each row defines a (target hairstyle → source face) pair:
-
-```csv
-target_id,source_id,lift_3d,head_diff_angle
-reference,source,True,0.98
-```
-
-Here `target_id` is the identity whose **hair** you want (the reference), and `source_id` is the identity whose **face** you want to keep (the source). You can list multiple pairs.
-
-The `lift_3d` and `head_diff_angle` columns are optional — if omitted or left empty, they are computed automatically via FLAME fitting. When provided, they are trusted as-is (no recomputation), which is faster.
-
-### Step 4: Run the pipeline
-
-```bash
-hairport --data_dir my_project --shape_provider hi3dgen --texture_provider mvadapter --bald_version w_seg
-```
-
-This runs all nine stages sequentially. Depending on your GPU, the full pipeline takes roughly 5–15 minutes per pair.
-
-### Step 5: Find the result
-
-The final transferred image is saved at:
-
-```
-my_project/view_aligned/shape_hi3dgen__texture_mvadapter/reference_to_source/w_seg/3d_aware/transferred_klein/hair_restored.png
-```
-
-The intermediate outputs are also available within the same hierarchy:
-
-```
-my_project/
-├── bald/w_seg/image/source.png                  # Bald source (Stage 1)
-├── bald/w_seg/image_outpainted/source.png       # Outpainted bald (Stage 2)
-├── mvadapter/hi3dgen/source/shape_mesh.glb      # Simplified mesh (Stage 3)
-├── lmk_3d/shape_hi3dgen__texture_mvadapter/     # 3D landmarks (Stage 4)
-│   └── source/landmarks_3d.npy
-└── view_aligned/shape_hi3dgen__texture_mvadapter/
-    └── reference_to_source/
-        ├── alignment/                            # Aligned + rendered views (Stages 5–6)
-        │   ├── target_image.png                  # MV-Adapter render
-        │   └── target_image_phase_1.png          # Enhanced render (Stage 7)
-        └── w_seg/
-            └── 3d_aware/
-                ├── warping/                      # Hair warping (Stage 8)
-                ├── blending/poisson_blended.png  # Poisson-blended (Stage 8)
-                └── transferred_klein/
-                    └── hair_restored.png         # ✅ Final result (Stage 9)
-```
-
-### Using the Python API
-
-```python
-from hairport.pipeline import HairPortPipeline
-
-pipeline = HairPortPipeline(
-    data_dir="my_project",
-    shape_provider="hi3dgen",
-    texture_provider="mvadapter",
-    bald_version="w_seg",
-)
-results = pipeline.run()
-
-for r in results:
-    status = "OK" if r.success else "FAIL"
-    print(f"[{status}] {r.stage:20s}  {r.duration_seconds:.1f}s")
-```
-
----
-
-## Usage
-
-### Full pipeline
-
-Run all nine stages end-to-end:
-
-```bash
-hairport --data_dir outputs
-```
-
-The `--data_dir` argument points to a directory containing the input data (source images, target meshes, etc.) and where all intermediate and final outputs are written.
-
-### Common options
-
-```bash
-# Choose shape and texture providers
-hairport --data_dir outputs --shape_provider hi3dgen --texture_provider mvadapter
-
-# Select bald conversion mode
-hairport --data_dir outputs --bald_version w_seg    # with segmentation (higher quality)
-hairport --data_dir outputs --bald_version wo_seg   # without segmentation (faster)
-
-# Set device and seed
-hairport --data_dir outputs --device cuda --seed 42
-
-# Use a custom config
-hairport --data_dir outputs --config configs/my_config.yaml --set seed=0
-```
-
-### Running specific stages
-
-```bash
-# Resume from a specific stage
-hairport --data_dir outputs --start render_view
-
-# Run up to a specific stage
-hairport --data_dir outputs --end caption
-
-# Run a range of stages
-hairport --data_dir outputs --start render_view --end blend_hair
-
-# Run only specific stages
-hairport --data_dir outputs --only blend_hair transfer_hair
-
-# Skip specific stages
-hairport --data_dir outputs --skip shape_mesh landmark_3d
-
-# Continue even if a stage fails
-hairport --data_dir outputs --no-stop-on-error
-```
-
-### Running individual stages
-
-Each stage has its own CLI entry point:
-
-```bash
-hairport-baldify     --data_dir outputs
-hairport-caption     --data_dir outputs
-hairport-shape-mesh  --data_dir outputs
-hairport-landmark-3d --data_dir outputs
-hairport-align-view  --data_dir outputs
-hairport-render-view --data_dir outputs
-hairport-enhance-view --data_dir outputs
-hairport-blend-hair  --data_dir outputs
-hairport-transfer-hair --data_dir outputs
-```
-
-### Python API
-
-```python
-from hairport.pipeline import HairPortPipeline
-
-pipeline = HairPortPipeline(
-    data_dir="outputs",
-    shape_provider="hi3dgen",
-    texture_provider="mvadapter",
-    bald_version="w_seg",
-)
-results = pipeline.run()
-
-# Run a subset of stages
-results = pipeline.run(start="render_view", end="blend_hair")
-
-# Run a single stage
-results = pipeline.run(only=["transfer_hair"])
-```
-
-### Bald Converter (standalone)
-
-The Bald Converter can be used independently:
+Use the Bald Converter independently when you only need bald portrait generation:
 
 ```python
 from hairport.bald_konverter import BaldKonverterPipeline
@@ -385,20 +390,15 @@ result = pipeline("portrait.jpg")
 result.bald_image.save("bald.png")
 ```
 
-Or via CLI:
+CLI form:
 
 ```bash
-# Single image
-hairport-bald --input photo.jpg --output bald.png
-
-# Batch processing
-hairport-bald --input-dir ./faces/ --output-dir ./bald/
-
-# With segmentation for higher quality
-hairport-bald --input photo.jpg --output bald.png --mode w_seg
+python -m hairport.bald_konverter.cli --input photo.jpg --output bald.png
+python -m hairport.bald_konverter.cli --input-dir ./faces/ --output-dir ./bald/
+python -m hairport.bald_konverter.cli --input photo.jpg --output bald.png --mode w_seg
 ```
 
-### 3D Landmark Estimation (standalone)
+### 3D Landmark Estimation
 
 ```python
 from hairport.fit_lmk import estimate_3d_landmarks
@@ -409,75 +409,71 @@ results = estimate_3d_landmarks(
     cam_rot=[1.5708, 0.0, 0.0],
     output_dir="./landmarks_output",
 )
-# results['landmarks_3d'] → (N, 3) tensor
-# results['vertex_indices'] → (N,) tensor
-# results['confidences'] → (N,) tensor
 ```
 
 ---
 
-## Data Layout
+## Project Structure
 
-The pipeline expects and produces the following directory structure under `data_dir`:
-
-```
-data_dir/
-├── image/                          # ← INPUT: All portrait images (source + reference)
-│   ├── source.png
-│   └── reference.png
-├── matted_image/                   # Background-removed images (auto-generated)
-├── pairs.csv                       # ← INPUT: Transfer pairs (target_id, source_id)
-│
-├── mvadapter/hi3dgen/              # ← INPUT: 3D head meshes (user-provided)
-│   ├── source/shape_mesh.glb
-│   └── reference/shape_mesh.glb
-│
-├── bald/                           # Generated by Stage 1–2
-│   └── w_seg/
-│       ├── image/                  # Bald portraits
-│       └── image_outpainted/       # Outpainted bald images
-├── lmk_3d/                         # Generated by Stage 4
-│   └── shape_hi3dgen__texture_mvadapter/
-│       └── <identity>/landmarks_3d.npy
-│
-└── view_aligned/                   # Generated by Stages 5–9
-    └── shape_hi3dgen__texture_mvadapter/
-        └── <target>_to_<source>/
-            ├── alignment/          # Rendered + enhanced views
-            └── <bald_version>/
-                └── 3d_aware/
-                    ├── warping/    # Warped hair
-                    ├── blending/   # Poisson-blended composite
-                    └── transferred_klein/
-                        └── hair_restored.png   # ← FINAL OUTPUT
+```text
+HairPort/
+├── configs/
+│   └── default.yaml                # Centralized YAML configuration
+├── scripts/
+│   ├── install.sh                  # Full dependency recipe
+│   └── setup_submodules.sh         # External module setup
+├── assets/
+│   ├── images/                     # README figures
+│   ├── flame/FLAME2020/            # FLAME assets
+│   └── body_models/landmarks/flame/
+├── hairport/
+│   ├── pipeline.py                 # HairPortPipeline orchestrator
+│   ├── config.py                   # OmegaConf config system
+│   ├── data.py                     # Dataset path management
+│   ├── stages/                     # Pipeline stage modules
+│   ├── bald_konverter/             # Bald Converter package
+│   ├── fit_lmk/                    # 3D landmark estimation
+│   ├── core/                       # Shared vision and geometry components
+│   ├── utility/                    # Rendering, warping, outpainting utilities
+│   └── postprocessing/             # Hair restoration and mask helpers
+├── LICENSE
+└── README.md
 ```
 
 ---
 
-## External Dependencies
+## External Dependencies / Models
 
-| Module | Repository | Purpose |
-|--------|-----------|---------|
+### External modules
+
+| Module | Repository | Used for |
+|--------|------------|----------|
 | CodeFormer | [sczhou/CodeFormer](https://github.com/sczhou/CodeFormer) | Face super-resolution |
 | MV-Adapter | [huanngzh/MV-Adapter](https://github.com/huanngzh/MV-Adapter) | Multi-view generation adapter for SDXL |
-| SHeaP | [deepmancer/SHeaP](https://github.com/deepmancer/SHeaP) | FLAME-based head segmentation & orientation |
+| SHeaP | [deepmancer/SHeaP](https://github.com/deepmancer/SHeaP) | FLAME-based head segmentation and orientation |
 
-These are cloned automatically by `scripts/setup_submodules.sh`.
+---
 
-> **Note:** [Hi3DGen](https://github.com/Stable-X/Hi3DGen) (3D head reconstruction) is no longer bundled. Users must generate 3D meshes externally and place them at the expected paths.
+## Acknowledgements
 
-### Key HuggingFace Models
+HairPort builds on a number of excellent open-source projects and research assets. We thank the authors and maintainers of [MV-Adapter](https://github.com/huanngzh/MV-Adapter), [Hi3DGen](https://github.com/Stable-X/Hi3DGen), [CodeFormer](https://github.com/sczhou/CodeFormer), [SHeaP](https://github.com/deepmancer/SHeaP), [FLAME](https://flame.is.tue.mpg.de), MediaPipe, Segment Anything, BEN2, Hugging Face Diffusers/Transformers, FLUX, and Qwen for making their work available to the community.
 
-| Model | ID | Used For |
-|-------|----|----------|
-| FLUX.2 Klein 9B | `black-forest-labs/FLUX.2-klein-9B` | Image enhancement & hair transfer |
-| FLUX.1 Kontext | `black-forest-labs/FLUX.1-Kontext-dev` | Bald conversion (in-context editing) |
-| SAM 3.1 | `facebook/sam3.1` | Hair/head mask segmentation |
-| BEN2 | `PramaLLC/BEN2` | Background removal |
-| Qwen3-VL-8B | `Qwen/Qwen3-VL-8B-Instruct` | Image captioning |
-| Qwen Image-Edit | `Qwen/Qwen-Image-Edit` | Image outpainting |
-| RealVisXL V4.0 | `SG161222/RealVisXL_V4.0` | SDXL base model for rendering |
-| MV-Adapter | `huanngzh/mv-adapter` | Multi-view adapter weights |
+Please refer to the respective projects for their licenses, model terms, and citation requirements.
+
+---
+
+## Citation
+
+If you use HairPort in your research, please cite:
+
+```bibtex
+@inproceedings{heidari2026hairport,
+  title     = {HairPort: In-context 3D-Aware Hair Import and Transfer for Images},
+  author    = {A. Heidari and A. Alimohammadi and W. Michel Pinto Lira and A. Bar-Lev and A. Mahdavi-Amiri},
+  booktitle = {ACM SIGGRAPH 2026},
+  year      = {2026}
+}
+```
 
 ---
 
