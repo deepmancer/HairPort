@@ -38,19 +38,6 @@ HairPort transfers a reference hairstyle onto a source face while explicitly han
 
 ---
 
-## Highlights
-
-| Capability | Why it matters |
-|------------|----------------|
-| **3D-aware transfer** | Reconstructs and re-renders the reference hairstyle from the source viewpoint before synthesis. |
-| **Large pose and scale gaps** | Designed for transfers where simple 2D warping or copy-paste editing breaks down. |
-| **Identity preservation** | Separates source hair removal from final hairstyle synthesis to keep the source face stable. |
-| **Bald Converter** | Uses FLUX LoRA in-context editing to produce realistic bald source portraits. |
-| **Baldy dataset** | Introduces 6,400 paired bald/original images for training the Bald Converter. |
-| **Modular pipeline** | Exposes each stage separately, making it easier to inspect, debug, extend, or swap components. |
-
----
-
 ## Results Teaser
 
 <p align="center">
