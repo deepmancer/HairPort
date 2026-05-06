@@ -31,5 +31,4 @@ assets/
    `assets/body_models/landmarks/flame/`.
 
 3. **Other checkpoints** — Will be auto-downloaded by HuggingFace Hub the
-   first time the corresponding pipeline is loaded (BEN2, SAM 3.1, Qwen3-VL,
-   etc.).
+   first time the corresponding pipeline is loaded (BEN2, SAM 3.1, etc.).
