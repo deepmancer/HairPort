@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HairPort | In-context 3D-Aware Hair Import and Transfer</title>
+    <meta name="description" content="HairPort is a SIGGRAPH 2026 3D-aware hairstyle transfer framework for images, with in-context bald conversion, pose-aligned hair import, and identity-preserving synthesis.">
+    <meta name="theme-color" content="#0f766e">
+    <meta property="og:title" content="HairPort">
+    <meta property="og:description" content="In-context 3D-Aware Hair Import and Transfer for Images. ACM SIGGRAPH 2026.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://deepmancer.github.io/HairPort/">
+    <meta property="og:image" content="https://deepmancer.github.io/HairPort/assets/images/social-preview.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="HairPort">
+    <meta name="twitter:description" content="In-context 3D-Aware Hair Import and Transfer for Images. ACM SIGGRAPH 2026.">
+    <meta name="twitter:image" content="https://deepmancer.github.io/HairPort/assets/images/social-preview.jpg">
+    <link rel="stylesheet" href="assets/site.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" data-site-header>
+      <nav class="nav-wrap" aria-label="Primary navigation">
+        <a class="brand" href="#top" aria-label="HairPort home">HairPort</a>
+        <div class="nav-links">
+          <a href="#results">Results</a>
+          <a href="#method">Method</a>
+          <a href="#code">Code</a>
+          <a href="#news">News</a>
+          <a href="#citation">Citation</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <picture class="hero-bg" aria-hidden="true">
+          <source srcset="assets/images/teaser.webp" type="image/webp">
+          <img src="assets/images/teaser.png" alt="">
+        </picture>
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
+          <p class="eyebrow">ACM SIGGRAPH 2026</p>
+          <h1 id="hero-title">HairPort</h1>
+          <p class="hero-subtitle">In-context 3D-Aware Hair Import and Transfer for Images</p>
+          <p class="authors">A. Heidari, A. Alimohammadi, W. Michel Pinto Lira, A. Bar-Lev, and A. Mahdavi-Amiri</p>
+          <p class="hero-copy">Transfer a reference hairstyle onto a source face with 3D-aware pose alignment, realistic bald conversion, and identity-preserving final synthesis.</p>
+          <div class="cta-row" aria-label="Primary links">
+            <a class="button primary" href="https://deepmancer.github.io/HairPort/">Project Page</a>
+            <a class="button primary" href="https://github.com/deepmancer/HairPort">Code</a>
+            <a class="button" href="#citation">Citation</a>
+            <a class="button" href="https://huggingface.co/datasets/deepmancer/baldy">Dataset</a>
+            <a class="button" href="https://huggingface.co/deepmancer/bald_konverter">Weights</a>
+            <span class="button muted" aria-disabled="true">Paper coming soon</span>
+            <span class="button muted" aria-disabled="true">Video coming soon</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section intro" aria-labelledby="intro-title">
+        <div class="section-inner intro-grid">
+          <div>
+            <p class="eyebrow dark">Why HairPort</p>
+            <h2 id="intro-title">Hair transfer that understands viewpoint.</h2>
+          </div>
+          <p class="lead">Most image-based hairstyle transfer methods struggle when the source face and reference hairstyle differ in pose, scale, or visible hair coverage. HairPort separates hair removal from transfer, lifts the reference hairstyle into a 3D-aware alignment stage, and then synthesizes the final image from source-aligned evidence.</p>
+        </div>
+      </section>
+
+      <section class="section" id="results" aria-labelledby="results-title">
+        <div class="section-inner">
+          <div class="section-heading">
+            <p class="eyebrow dark">Results</p>
+            <h2 id="results-title">Robust transfers across identity, style, and viewpoint.</h2>
+            <p>HairPort handles realistic photos, stylized references, large pose gaps, and significant scale differences while preserving the source identity.</p>
+          </div>
+          <figure class="figure-frame large">
+            <picture>
+              <source srcset="assets/images/teaser.webp" type="image/webp">
+              <img src="assets/images/teaser.png" alt="HairPort teaser showing multiple source faces, reference hairstyles, and transferred results.">
+            </picture>
+            <figcaption>Figure 1. Hairstyle transfer examples across challenging identity, pose, scale, and style differences.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section tinted" aria-labelledby="highlights-title">
+        <div class="section-inner">
+          <div class="section-heading compact">
+            <p class="eyebrow dark">Highlights</p>
+            <h2 id="highlights-title">Built for the failure cases that make hair transfer hard.</h2>
+          </div>
+          <div class="card-grid">
+            <article class="info-card">
+              <span class="card-kicker">01</span>
+              <h3>3D-aware transfer</h3>
+              <p>Reconstructs and re-renders the reference hairstyle from the source viewpoint before final synthesis.</p>
+            </article>
+            <article class="info-card">
+              <span class="card-kicker">02</span>
+              <h3>Large pose gaps</h3>
+              <p>Designed for transfers where direct 2D warping or local editing loses important hair structure.</p>
+            </article>
+            <article class="info-card">
+              <span class="card-kicker">03</span>
+              <h3>Identity preservation</h3>
+              <p>Separates bald source generation from hairstyle import so the face remains stable.</p>
+            </article>
+            <article class="info-card">
+              <span class="card-kicker">04</span>
+              <h3>Bald Converter</h3>
+              <p>Uses FLUX LoRA in-context editing to create realistic bald portraits for transfer conditioning.</p>
+            </article>
+            <article class="info-card">
+              <span class="card-kicker">05</span>
+              <h3>Baldy dataset</h3>
+              <p>Introduces 6,400 paired bald and original images for training the Bald Converter.</p>
+            </article>
+            <article class="info-card">
+              <span class="card-kicker">06</span>
+              <h3>Modular code</h3>
+              <p>Exposes stages separately for inspection, debugging, extension, and future component swaps.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="method" aria-labelledby="method-title">
+        <div class="section-inner">
+          <div class="section-heading">
+            <p class="eyebrow dark">Method</p>
+            <h2 id="method-title">From bald source to source-aligned hairstyle evidence.</h2>
+            <p>The pipeline first removes source hair, then aligns the reference hairstyle through a 3D-aware transfer stage, and finally synthesizes the completed transfer.</p>
+          </div>
+          <figure class="figure-frame">
+            <picture>
+              <source srcset="assets/images/paper-method.webp" type="image/webp">
+              <img src="assets/images/paper-method.png" alt="HairPort method diagram showing bald conversion, 3D-aware hair transfer, and final synthesis.">
+            </picture>
+            <figcaption>Figure 2. HairPort method overview.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section tinted" id="bald-converter" aria-labelledby="bald-title">
+        <div class="section-inner two-column">
+          <div class="section-copy">
+            <p class="eyebrow dark">Bald Converter and Baldy</p>
+            <h2 id="bald-title">A dedicated bald-generation stage for cleaner transfer.</h2>
+            <p>The Bald Converter produces realistic bald versions of source portraits using LoRA-based in-context adaptation of FLUX. Baldy provides paired bald/original supervision across diverse identities and conditions.</p>
+            <div class="text-links">
+              <a href="https://huggingface.co/datasets/deepmancer/baldy">Baldy dataset</a>
+              <a href="https://huggingface.co/deepmancer/bald_konverter">LoRA weights</a>
+            </div>
+          </div>
+          <figure class="figure-frame flush">
+            <picture>
+              <source srcset="assets/images/bald-converter.webp" type="image/webp">
+              <img src="assets/images/bald-converter.png" alt="Baldy dataset generation and Bald Converter finetuning diagram.">
+            </picture>
+            <figcaption>Figure 3. Baldy dataset generation and Bald Converter finetuning.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section" id="code" aria-labelledby="code-title">
+        <div class="section-inner">
+          <div class="section-heading compact">
+            <p class="eyebrow dark">Code and Assets</p>
+            <h2 id="code-title">Source preview, dataset, and LoRA weights are available.</h2>
+            <p>The implementation snapshot is available now. Packaging, dependency manifests, and installed console-script entry points are still being finalized.</p>
+          </div>
+          <div class="resource-grid">
+            <a class="resource-card" href="https://github.com/deepmancer/HairPort">
+              <span>GitHub</span>
+              <strong>HairPort source code</strong>
+              <small>Official SIGGRAPH 2026 implementation snapshot.</small>
+            </a>
+            <a class="resource-card" href="https://github.com/deepmancer/HairPort#installation">
+              <span>README</span>
+              <strong>Installation notes</strong>
+              <small>Current setup, source preview caveats, and usage examples.</small>
+            </a>
+            <a class="resource-card" href="https://huggingface.co/datasets/deepmancer/baldy">
+              <span>Dataset</span>
+              <strong>Baldy</strong>
+              <small>6,400 paired bald/original images.</small>
+            </a>
+            <a class="resource-card" href="https://huggingface.co/deepmancer/bald_konverter">
+              <span>Weights</span>
+              <strong>Bald Converter LoRAs</strong>
+              <small>Adapters for in-context bald generation.</small>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section tinted" id="news" aria-labelledby="news-title">
+        <div class="section-inner">
+          <div class="section-heading compact">
+            <p class="eyebrow dark">News</p>
+            <h2 id="news-title">Latest updates.</h2>
+          </div>
+          <ol class="timeline">
+            <li><time>May 2026</time><span>HairPort was accepted to ACM SIGGRAPH 2026.</span></li>
+            <li><time>May 2026</time><span>Project page launched at deepmancer.github.io/HairPort.</span></li>
+            <li><time>April 2026</time><span>Initial source preview released; packaging and dependency manifests will be finalized soon.</span></li>
+            <li><time>April 2026</time><span>Baldy dataset and Bald Converter LoRA weights released.</span></li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section" id="citation" aria-labelledby="citation-title">
+        <div class="section-inner citation-layout">
+          <div>
+            <p class="eyebrow dark">Citation</p>
+            <h2 id="citation-title">Use HairPort in your research?</h2>
+            <p>Please cite the SIGGRAPH 2026 paper.</p>
+          </div>
+          <div class="citation-box">
+            <button class="copy-button" type="button" data-copy-citation>Copy BibTeX</button>
+            <pre><code id="bibtex">@inproceedings{heidari2026hairport,
+  title     = {HairPort: In-context 3D-Aware Hair Import and Transfer for Images},
+  author    = {A. Heidari and A. Alimohammadi and W. Michel Pinto Lira and A. Bar-Lev and A. Mahdavi-Amiri},
+  booktitle = {ACM SIGGRAPH 2026},
+  year      = {2026}
+}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="section acknowledgements" aria-labelledby="ack-title">
+        <div class="section-inner">
+          <p class="eyebrow dark">Acknowledgements</p>
+          <h2 id="ack-title">Built on open research infrastructure.</h2>
+          <p>HairPort builds on excellent open-source projects and research assets, including MV-Adapter, Hi3DGen, CodeFormer, SHeaP, FLAME, MediaPipe, Segment Anything, BEN2, Hugging Face Diffusers/Transformers, FLUX, and Qwen. Please refer to the respective projects for their licenses, model terms, and citation requirements.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <span>HairPort, ACM SIGGRAPH 2026</span>
+        <a href="https://github.com/deepmancer/HairPort">GitHub</a>
+        <a href="https://huggingface.co/datasets/deepmancer/baldy">Dataset</a>
+        <a href="https://huggingface.co/deepmancer/bald_konverter">Weights</a>
+      </div>
+    </footer>
+
+    <script src="assets/site.js"></script>
+  </body>
+</html>
