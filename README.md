@@ -32,9 +32,9 @@ HairPort transfers a reference hairstyle onto a source face while explicitly han
 
 - **May 2026:** HairPort was accepted to **ACM SIGGRAPH 2026**.
 - **May 2026:** Launched the [HairPort project page](https://deepmancer.github.io/HairPort/).
-- **May 2026:** Initial HairPort source code released; packaging and dependency manifests will be finalized soon.
-- **May 2026:** Released the [Baldy dataset](https://huggingface.co/datasets/deepmancer/baldy) for paired bald/original image training.
-- **May 2026:** Released the [Bald Converter LoRA weights](https://huggingface.co/deepmancer/bald_konverter).
+- **April 2026:** Initial HairPort source code released; packaging and dependency manifests will be finalized soon.
+- **April 2026:** Released the [Baldy dataset](https://huggingface.co/datasets/deepmancer/baldy) for paired bald/original image training.
+- **April 2026:** Released the [Bald Converter LoRA weights](https://huggingface.co/deepmancer/bald_konverter).
 
 ---
 
