@@ -26,9 +26,10 @@
         <div class="nav-links">
           <a href="#paper">Paper</a>
           <a href="#results">Results</a>
+          <a href="#bald-results">Bald Converter</a>
+          <a href="#transfer-results">Transfer Gallery</a>
           <a href="#method">Method</a>
           <a href="#code">Code</a>
-          <a href="#news">News</a>
           <a href="#citation">Citation</a>
         </div>
       </nav>
@@ -36,13 +37,7 @@
 
     <main id="main">
       <section class="hero" id="top" aria-labelledby="hero-title">
-        <picture class="hero-bg" aria-hidden="true">
-          <source srcset="assets/images/teaser.webp" type="image/webp">
-          <img src="assets/images/teaser.png" alt="">
-        </picture>
-        <div class="hero-overlay"></div>
-
-        <div class="hero-content">
+        <div class="hero-content reveal">
           <div class="venue-lockup" aria-label="Accepted to ACM SIGGRAPH 2026">
             <span>Accepted paper</span>
             <strong>ACM SIGGRAPH 2026</strong>
@@ -68,15 +63,290 @@
             <span class="button muted" aria-disabled="true">Video coming soon</span>
           </div>
         </div>
+
+        <figure class="hero-visual reveal">
+          <picture>
+            <source srcset="assets/images/transfer-collage/sample_130_to_sample_002.webp" type="image/webp">
+            <img src="assets/images/transfer-collage/sample_130_to_sample_002.jpg" alt="HairPort example with a source face, reference hairstyle, and final transferred hairstyle result.">
+          </picture>
+          <figcaption>
+            <span class="panel-label source">Source face</span>
+            <span class="panel-label reference">Reference hair</span>
+            <span class="panel-label result">Transferred result</span>
+          </figcaption>
+        </figure>
+      </section>
+
+      <section class="section results-spotlight" id="results" aria-labelledby="results-title">
+        <div class="section-inner">
+          <div class="section-heading reveal">
+            <p class="eyebrow dark">Results</p>
+            <h2 id="results-title">Pose-aware hairstyle transfer with the result front and center.</h2>
+            <p>HairPort imports the reference hairstyle while keeping the source face stable, even when the hairstyle image differs in viewpoint, scale, lighting, or identity.</p>
+          </div>
+
+          <figure class="spotlight-frame reveal">
+            <picture>
+              <source srcset="assets/images/transfer-collage/sample_130_to_sample_002.webp" type="image/webp">
+              <img src="assets/images/transfer-collage/sample_130_to_sample_002.jpg" alt="Source face, reference hair image, and HairPort transferred result in one collage.">
+            </picture>
+            <figcaption>
+              <span class="panel-label source">Source face</span>
+              <span class="panel-label reference">Reference hair</span>
+              <span class="panel-label result">Transferred result</span>
+            </figcaption>
+          </figure>
+
+          <div class="result-notes reveal" aria-label="Result qualities">
+            <article>
+              <span>01</span>
+              <strong>Identity stays grounded</strong>
+              <p>The source face remains the anchor throughout the transfer.</p>
+            </article>
+            <article>
+              <span>02</span>
+              <strong>Reference style is preserved</strong>
+              <p>Color, shape, length, and local hair structure are imported from the reference.</p>
+            </article>
+            <article>
+              <span>03</span>
+              <strong>3D alignment handles pose gaps</strong>
+              <p>Reference hair is reconstructed and re-rendered before final synthesis.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section compact-band" id="bald-results" aria-labelledby="bald-results-title">
+        <div class="section-inner">
+          <div class="section-heading reveal">
+            <p class="eyebrow dark">Bald Converter Results</p>
+            <h2 id="bald-results-title">A cleaner source canvas before hairstyle transfer.</h2>
+            <p>The Bald Converter removes source hair while preserving face, expression, clothing, lighting, and background context. Drag each slider to compare the original and generated bald portrait.</p>
+          </div>
+
+          <div class="comparison-grid featured">
+            <figure class="comparison-card reveal" data-comparison style="--pos: 50%;">
+              <div class="comparison-view">
+                <div class="comparison-layer comparison-before">
+                  <img src="assets/images/bald-collage/sample_083.webp" alt="Original portrait before bald conversion." loading="lazy" decoding="async">
+                </div>
+                <div class="comparison-layer comparison-after">
+                  <img src="assets/images/bald-collage/sample_083.webp" alt="Generated bald portrait after Bald Converter." loading="lazy" decoding="async">
+                </div>
+                <span class="compare-label original">Original</span>
+                <span class="compare-label bald">Bald</span>
+                <span class="compare-handle" aria-hidden="true"></span>
+              </div>
+              <input class="comparison-range" type="range" min="0" max="100" value="50" aria-label="Reveal original or bald result">
+              <figcaption>Bald conversion preserves local lighting and facial appearance.</figcaption>
+            </figure>
+
+            <figure class="comparison-card reveal" data-comparison style="--pos: 50%;">
+              <div class="comparison-view">
+                <div class="comparison-layer comparison-before">
+                  <img src="assets/images/bald-collage/sample_095.webp" alt="Original portrait before bald conversion." loading="lazy" decoding="async">
+                </div>
+                <div class="comparison-layer comparison-after">
+                  <img src="assets/images/bald-collage/sample_095.webp" alt="Generated bald portrait after Bald Converter." loading="lazy" decoding="async">
+                </div>
+                <span class="compare-label original">Original</span>
+                <span class="compare-label bald">Bald</span>
+                <span class="compare-handle" aria-hidden="true"></span>
+              </div>
+              <input class="comparison-range" type="range" min="0" max="100" value="50" aria-label="Reveal original or bald result">
+              <figcaption>Challenging makeup, accessories, and close crops remain coherent.</figcaption>
+            </figure>
+
+            <figure class="comparison-card reveal" data-comparison style="--pos: 50%;">
+              <div class="comparison-view">
+                <div class="comparison-layer comparison-before">
+                  <img src="assets/images/bald-collage/sample_164.webp" alt="Original portrait before bald conversion." loading="lazy" decoding="async">
+                </div>
+                <div class="comparison-layer comparison-after">
+                  <img src="assets/images/bald-collage/sample_164.webp" alt="Generated bald portrait after Bald Converter." loading="lazy" decoding="async">
+                </div>
+                <span class="compare-label original">Original</span>
+                <span class="compare-label bald">Bald</span>
+                <span class="compare-handle" aria-hidden="true"></span>
+              </div>
+              <input class="comparison-range" type="range" min="0" max="100" value="50" aria-label="Reveal original or bald result">
+              <figcaption>Stylized portraits can still be converted into usable bald sources.</figcaption>
+            </figure>
+
+            <figure class="comparison-card reveal" data-comparison style="--pos: 50%;">
+              <div class="comparison-view">
+                <div class="comparison-layer comparison-before">
+                  <img src="assets/images/bald-collage/sample_060.webp" alt="Original portrait before bald conversion." loading="lazy" decoding="async">
+                </div>
+                <div class="comparison-layer comparison-after">
+                  <img src="assets/images/bald-collage/sample_060.webp" alt="Generated bald portrait after Bald Converter." loading="lazy" decoding="async">
+                </div>
+                <span class="compare-label original">Original</span>
+                <span class="compare-label bald">Bald</span>
+                <span class="compare-handle" aria-hidden="true"></span>
+              </div>
+              <input class="comparison-range" type="range" min="0" max="100" value="50" aria-label="Reveal original or bald result">
+              <figcaption>The model handles varied hair volume and portrait framing.</figcaption>
+            </figure>
+
+            <figure class="comparison-card reveal" data-comparison style="--pos: 50%;">
+              <div class="comparison-view">
+                <div class="comparison-layer comparison-before">
+                  <img src="assets/images/bald-collage/sample_070.webp" alt="Original portrait before bald conversion." loading="lazy" decoding="async">
+                </div>
+                <div class="comparison-layer comparison-after">
+                  <img src="assets/images/bald-collage/sample_070.webp" alt="Generated bald portrait after Bald Converter." loading="lazy" decoding="async">
+                </div>
+                <span class="compare-label original">Original</span>
+                <span class="compare-label bald">Bald</span>
+                <span class="compare-handle" aria-hidden="true"></span>
+              </div>
+              <input class="comparison-range" type="range" min="0" max="100" value="50" aria-label="Reveal original or bald result">
+              <figcaption>Bald conversion keeps clothing and background context intact.</figcaption>
+            </figure>
+
+            <figure class="comparison-card reveal" data-comparison style="--pos: 50%;">
+              <div class="comparison-view">
+                <div class="comparison-layer comparison-before">
+                  <img src="assets/images/bald-collage/sample_146.webp" alt="Original portrait before bald conversion." loading="lazy" decoding="async">
+                </div>
+                <div class="comparison-layer comparison-after">
+                  <img src="assets/images/bald-collage/sample_146.webp" alt="Generated bald portrait after Bald Converter." loading="lazy" decoding="async">
+                </div>
+                <span class="compare-label original">Original</span>
+                <span class="compare-label bald">Bald</span>
+                <span class="compare-handle" aria-hidden="true"></span>
+              </div>
+              <input class="comparison-range" type="range" min="0" max="100" value="50" aria-label="Reveal original or bald result">
+              <figcaption>Hair removal is separated from transfer to stabilize the final edit.</figcaption>
+            </figure>
+          </div>
+
+          <div class="toggle-row reveal">
+            <button class="button dark" type="button" data-toggle-panel="bald-more" data-open-label="Hide examples" data-closed-label="View more examples" aria-expanded="false" aria-controls="bald-more">View more examples</button>
+          </div>
+
+          <div class="collage-grid more-panel" id="bald-more" hidden>
+            <figure><img src="assets/images/bald-collage/Rengoku-PNG-Picture.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/einstein.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/eren_1.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/gojo_2.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/henry_superman_3.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/homelander.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/john_snow_1.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/joker_1.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/morty_1.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/rick_2.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/sample_002.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/sample_066.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/sample_082.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/sample_086.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/sample_088.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/sample_089.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/sample_096.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/sample_099.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/sample_161.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/sample_171.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/spider_man_1.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+            <figure><img src="assets/images/bald-collage/taylor_3.webp" alt="Original and bald portrait pair." loading="lazy" decoding="async"><figcaption><span>Original</span><span>Bald</span></figcaption></figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="transfer-results" aria-labelledby="transfer-results-title">
+        <div class="section-inner">
+          <div class="section-heading reveal">
+            <p class="eyebrow dark">Transfer Gallery</p>
+            <h2 id="transfer-results-title">Reference hair in, source identity out.</h2>
+            <p>Each panel shows the source face, the hairstyle reference, and the final transfer result. Use the carousel to inspect challenging changes in shape, color, pose, and scale.</p>
+          </div>
+
+          <div class="transfer-carousel reveal" data-carousel>
+            <div class="carousel-bar">
+              <span>Featured transfers</span>
+              <div class="carousel-controls" aria-label="Transfer gallery controls">
+                <button type="button" data-carousel-prev aria-label="Previous transfer example">Previous</button>
+                <button type="button" data-carousel-next aria-label="Next transfer example">Next</button>
+              </div>
+            </div>
+
+            <div class="transfer-track" data-carousel-track tabindex="0" aria-label="Featured hairstyle transfer examples">
+              <figure class="transfer-slide">
+                <picture><source srcset="assets/images/transfer-collage/sample_130_to_sample_002.webp" type="image/webp"><img src="assets/images/transfer-collage/sample_130_to_sample_002.jpg" alt="Source face, reference hairstyle, and HairPort transferred result." loading="lazy" decoding="async"></picture>
+                <figcaption><span class="panel-label source">Source</span><span class="panel-label reference">Reference</span><span class="panel-label result">Result</span></figcaption>
+              </figure>
+              <figure class="transfer-slide">
+                <picture><source srcset="assets/images/transfer-collage/sample_041_to_sample_061.webp" type="image/webp"><img src="assets/images/transfer-collage/sample_041_to_sample_061.jpg" alt="Source face, reference hairstyle, and HairPort transferred result." loading="lazy" decoding="async"></picture>
+                <figcaption><span class="panel-label source">Source</span><span class="panel-label reference">Reference</span><span class="panel-label result">Result</span></figcaption>
+              </figure>
+              <figure class="transfer-slide">
+                <picture><source srcset="assets/images/transfer-collage/sample_164_to_sample_066.webp" type="image/webp"><img src="assets/images/transfer-collage/sample_164_to_sample_066.jpg" alt="Source face, reference hairstyle, and HairPort transferred result." loading="lazy" decoding="async"></picture>
+                <figcaption><span class="panel-label source">Source</span><span class="panel-label reference">Reference</span><span class="panel-label result">Result</span></figcaption>
+              </figure>
+              <figure class="transfer-slide">
+                <picture><source srcset="assets/images/transfer-collage/sample_125_to_sample_037.webp" type="image/webp"><img src="assets/images/transfer-collage/sample_125_to_sample_037.jpg" alt="Source face, reference hairstyle, and HairPort transferred result." loading="lazy" decoding="async"></picture>
+                <figcaption><span class="panel-label source">Source</span><span class="panel-label reference">Reference</span><span class="panel-label result">Result</span></figcaption>
+              </figure>
+              <figure class="transfer-slide">
+                <picture><source srcset="assets/images/transfer-collage/sample_077_to_sample_089.webp" type="image/webp"><img src="assets/images/transfer-collage/sample_077_to_sample_089.jpg" alt="Source face, reference hairstyle, and HairPort transferred result." loading="lazy" decoding="async"></picture>
+                <figcaption><span class="panel-label source">Source</span><span class="panel-label reference">Reference</span><span class="panel-label result">Result</span></figcaption>
+              </figure>
+              <figure class="transfer-slide">
+                <picture><source srcset="assets/images/transfer-collage/sample_036_to_side5.webp" type="image/webp"><img src="assets/images/transfer-collage/sample_036_to_side5.jpg" alt="Source face, reference hairstyle, and HairPort transferred result." loading="lazy" decoding="async"></picture>
+                <figcaption><span class="panel-label source">Source</span><span class="panel-label reference">Reference</span><span class="panel-label result">Result</span></figcaption>
+              </figure>
+              <figure class="transfer-slide">
+                <picture><source srcset="assets/images/transfer-collage/sample_059_to_side10.webp" type="image/webp"><img src="assets/images/transfer-collage/sample_059_to_side10.jpg" alt="Source face, reference hairstyle, and HairPort transferred result." loading="lazy" decoding="async"></picture>
+                <figcaption><span class="panel-label source">Source</span><span class="panel-label reference">Reference</span><span class="panel-label result">Result</span></figcaption>
+              </figure>
+              <figure class="transfer-slide">
+                <picture><source srcset="assets/images/transfer-collage/sample_065_to_side7.webp" type="image/webp"><img src="assets/images/transfer-collage/sample_065_to_side7.jpg" alt="Source face, reference hairstyle, and HairPort transferred result." loading="lazy" decoding="async"></picture>
+                <figcaption><span class="panel-label source">Source</span><span class="panel-label reference">Reference</span><span class="panel-label result">Result</span></figcaption>
+              </figure>
+            </div>
+
+            <div class="carousel-dots" aria-label="Choose featured transfer example">
+              <button type="button" data-carousel-dot data-slide="0" aria-label="Show transfer example 1" aria-current="true"></button>
+              <button type="button" data-carousel-dot data-slide="1" aria-label="Show transfer example 2"></button>
+              <button type="button" data-carousel-dot data-slide="2" aria-label="Show transfer example 3"></button>
+              <button type="button" data-carousel-dot data-slide="3" aria-label="Show transfer example 4"></button>
+              <button type="button" data-carousel-dot data-slide="4" aria-label="Show transfer example 5"></button>
+              <button type="button" data-carousel-dot data-slide="5" aria-label="Show transfer example 6"></button>
+              <button type="button" data-carousel-dot data-slide="6" aria-label="Show transfer example 7"></button>
+              <button type="button" data-carousel-dot data-slide="7" aria-label="Show transfer example 8"></button>
+            </div>
+          </div>
+
+          <div class="toggle-row reveal">
+            <button class="button dark" type="button" data-toggle-panel="transfer-more" data-open-label="Hide full gallery" data-closed-label="View full gallery" aria-expanded="false" aria-controls="transfer-more">View full gallery</button>
+          </div>
+
+          <div class="transfer-grid more-panel" id="transfer-more" hidden>
+            <figure><img src="assets/images/transfer-collage/deneris_1_to_john_snow_1.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/eilish_2_to_side4.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/eilish_3_to_elon.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/john_wick_to_morty_1.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/joker_1_to_henry_witcher_1.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/sample_031_to_wolvorine_1.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/sample_072_to_n16.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/sample_088_to_vanessa_2.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/sample_127_to_superman.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/sample_141_to_eren_1.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/sample_143_to_mave.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/sydney_sweeney_1_to_sample_142.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+            <figure><img src="assets/images/transfer-collage/taylor_3_to_walter_white_1.webp" alt="Source face, reference hairstyle, and transferred result." loading="lazy" decoding="async"><figcaption><span>Source</span><span>Reference</span><span>Result</span></figcaption></figure>
+          </div>
+        </div>
       </section>
 
       <section class="section paper-summary" id="paper" aria-labelledby="paper-title">
         <div class="section-inner paper-grid">
-          <div>
+          <div class="reveal">
             <p class="eyebrow dark">Paper</p>
             <h2 id="paper-title">HairPort: In-context 3D-Aware Hair Import and Transfer for Images</h2>
           </div>
-          <div class="paper-meta">
+          <div class="paper-meta reveal">
             <div class="conference-mark">
               <span>ACM</span>
               <strong>SIGGRAPH 2026</strong>
@@ -92,70 +362,26 @@
         </div>
       </section>
 
-      <section class="section" id="results" aria-labelledby="results-title">
-        <div class="section-inner">
-          <div class="section-heading">
-            <p class="eyebrow dark">Results</p>
-            <h2 id="results-title">Robust transfers across identity, style, and viewpoint.</h2>
-            <p>HairPort handles realistic photos, stylized references, large pose gaps, and significant scale differences while preserving the source identity.</p>
-          </div>
-          <figure class="figure-frame large">
-            <picture>
-              <source srcset="assets/images/teaser.webp" type="image/webp">
-              <img src="assets/images/teaser.png" alt="HairPort teaser showing multiple source faces, reference hairstyles, and transferred results.">
-            </picture>
-            <figcaption>Figure 1. Hairstyle transfer examples across challenging identity, pose, scale, and style differences.</figcaption>
-          </figure>
-        </div>
-      </section>
-
-      <section class="section compact-band" aria-labelledby="highlights-title">
-        <div class="section-inner">
-          <div class="section-heading compact">
-            <p class="eyebrow dark">Highlights</p>
-            <h2 id="highlights-title">A 3D-aware route through hard hair-transfer cases.</h2>
-          </div>
-          <div class="feature-list">
-            <article>
-              <h3>3D-aware alignment</h3>
-              <p>Reference hair is reconstructed and re-rendered from the source viewpoint before synthesis.</p>
-            </article>
-            <article>
-              <h3>Large pose gaps</h3>
-              <p>Designed for cases where 2D warping or local editing loses hair structure and scale.</p>
-            </article>
-            <article>
-              <h3>Identity preservation</h3>
-              <p>Bald source generation and hairstyle import are separated to keep the face stable.</p>
-            </article>
-            <article>
-              <h3>Bald Converter + Baldy</h3>
-              <p>FLUX LoRA-based bald conversion trained with 6,400 paired bald/original images.</p>
-            </article>
-          </div>
-        </div>
-      </section>
-
       <section class="section" id="method" aria-labelledby="method-title">
         <div class="section-inner">
-          <div class="section-heading">
+          <div class="section-heading reveal">
             <p class="eyebrow dark">Method</p>
             <h2 id="method-title">A pipeline built around source-aligned hairstyle evidence.</h2>
             <p>The method removes source hair, aligns reference hair with 3D geometry, and conditions final synthesis on the bald source, aligned hair rendering, reference image, and text prompt.</p>
           </div>
-          <figure class="figure-frame">
+          <figure class="figure-frame reveal">
             <picture>
               <source srcset="assets/images/paper-method.webp" type="image/webp">
-              <img src="assets/images/paper-method.png" alt="HairPort method diagram showing bald conversion, 3D-aware hair transfer, and final synthesis.">
+              <img src="assets/images/paper-method.png" alt="HairPort method diagram showing bald conversion, 3D-aware hair transfer, and final synthesis." loading="lazy" decoding="async">
             </picture>
-            <figcaption>Figure 2. HairPort method overview.</figcaption>
+            <figcaption>Figure 1. HairPort method overview.</figcaption>
           </figure>
         </div>
       </section>
 
       <section class="section compact-band" id="bald-converter" aria-labelledby="bald-title">
         <div class="section-inner two-column">
-          <div class="section-copy">
+          <div class="section-copy reveal">
             <p class="eyebrow dark">Bald Converter and Baldy</p>
             <h2 id="bald-title">A dedicated bald-generation stage for cleaner transfer.</h2>
             <p>The Bald Converter produces realistic bald versions of source portraits using LoRA-based in-context adaptation of FLUX. Baldy provides paired bald/original supervision across diverse identities and conditions.</p>
@@ -164,40 +390,40 @@
               <a href="https://huggingface.co/deepmancer/bald_konverter">LoRA weights</a>
             </div>
           </div>
-          <figure class="figure-frame flush">
+          <figure class="figure-frame flush reveal">
             <picture>
               <source srcset="assets/images/bald-converter.webp" type="image/webp">
-              <img src="assets/images/bald-converter.png" alt="Baldy dataset generation and Bald Converter finetuning diagram.">
+              <img src="assets/images/bald-converter.png" alt="Baldy dataset generation and Bald Converter finetuning diagram." loading="lazy" decoding="async">
             </picture>
-            <figcaption>Figure 3. Baldy dataset generation and Bald Converter finetuning.</figcaption>
+            <figcaption>Figure 2. Baldy dataset generation and Bald Converter finetuning.</figcaption>
           </figure>
         </div>
       </section>
 
       <section class="section" id="code" aria-labelledby="code-title">
         <div class="section-inner">
-          <div class="section-heading compact">
+          <div class="section-heading compact reveal">
             <p class="eyebrow dark">Code and Assets</p>
             <h2 id="code-title">Source preview, dataset, and LoRA weights are available.</h2>
             <p>The implementation snapshot is available now. Packaging, dependency manifests, and installed console-script entry points are still being finalized.</p>
           </div>
           <div class="resource-grid">
-            <a class="resource-card" href="https://github.com/deepmancer/HairPort">
+            <a class="resource-card reveal" href="https://github.com/deepmancer/HairPort">
               <span>GitHub</span>
               <strong>HairPort source code</strong>
               <small>Official SIGGRAPH 2026 implementation snapshot.</small>
             </a>
-            <a class="resource-card" href="https://github.com/deepmancer/HairPort#installation">
+            <a class="resource-card reveal" href="https://github.com/deepmancer/HairPort#installation">
               <span>README</span>
               <strong>Installation notes</strong>
               <small>Current setup, source preview caveats, and usage examples.</small>
             </a>
-            <a class="resource-card" href="https://huggingface.co/datasets/deepmancer/baldy">
+            <a class="resource-card reveal" href="https://huggingface.co/datasets/deepmancer/baldy">
               <span>Dataset</span>
               <strong>Baldy</strong>
               <small>6,400 paired bald/original images.</small>
             </a>
-            <a class="resource-card" href="https://huggingface.co/deepmancer/bald_konverter">
+            <a class="resource-card reveal" href="https://huggingface.co/deepmancer/bald_konverter">
               <span>Weights</span>
               <strong>Bald Converter LoRAs</strong>
               <small>Adapters for in-context bald generation.</small>
@@ -208,27 +434,27 @@
 
       <section class="section compact-band" id="news" aria-labelledby="news-title">
         <div class="section-inner">
-          <div class="section-heading compact">
+          <div class="section-heading compact reveal">
             <p class="eyebrow dark">News</p>
             <h2 id="news-title">Latest updates.</h2>
           </div>
           <ol class="timeline">
-            <li><time>May 2026</time><span>HairPort was accepted to ACM SIGGRAPH 2026.</span></li>
-            <li><time>May 2026</time><span>Project page launched at deepmancer.github.io/HairPort.</span></li>
-            <li><time>April 2026</time><span>Initial source preview released; packaging and dependency manifests will be finalized soon.</span></li>
-            <li><time>April 2026</time><span>Baldy dataset and Bald Converter LoRA weights released.</span></li>
+            <li class="reveal"><time>May 2026</time><span>HairPort was accepted to ACM SIGGRAPH 2026.</span></li>
+            <li class="reveal"><time>May 2026</time><span>Project page launched at deepmancer.github.io/HairPort.</span></li>
+            <li class="reveal"><time>April 2026</time><span>Initial source preview released; packaging and dependency manifests will be finalized soon.</span></li>
+            <li class="reveal"><time>April 2026</time><span>Baldy dataset and Bald Converter LoRA weights released.</span></li>
           </ol>
         </div>
       </section>
 
       <section class="section paper-citation" id="citation" aria-labelledby="citation-title">
         <div class="section-inner citation-layout">
-          <div>
+          <div class="reveal">
             <p class="eyebrow dark">Citation</p>
             <h2 id="citation-title">Use HairPort in your research?</h2>
             <p>Please cite the ACM SIGGRAPH 2026 paper.</p>
           </div>
-          <div class="citation-box">
+          <div class="citation-box reveal">
             <button class="copy-button" type="button" data-copy-citation>Copy BibTeX</button>
             <pre><code id="bibtex">@inproceedings{heidari2026hairport,
   title     = {HairPort: In-context 3D-Aware Hair Import and Transfer for Images},
