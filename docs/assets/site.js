@@ -103,6 +103,25 @@ if (copyButton && citation) {
 }
 
 /* -------------------------------------------------------------------------
+ * Toggle panels
+ * ------------------------------------------------------------------------- */
+document.querySelectorAll("[data-toggle-panel]").forEach((button) => {
+  const panel = document.getElementById(button.dataset.togglePanel);
+  if (!panel) return;
+
+  const labelTarget = button.querySelector("[data-toggle-text]") || button;
+  const closedLabel = button.dataset.closedLabel || labelTarget.textContent;
+  const openLabel = button.dataset.openLabel || "Hide";
+
+  button.addEventListener("click", () => {
+    const willOpen = panel.hidden;
+    panel.hidden = !willOpen;
+    button.setAttribute("aria-expanded", String(willOpen));
+    labelTarget.textContent = willOpen ? openLabel : closedLabel;
+  });
+});
+
+/* -------------------------------------------------------------------------
  * Comparison sliders (drag + range fallback)
  * ------------------------------------------------------------------------- */
 document.querySelectorAll("[data-comparison]").forEach((comparison) => {
@@ -157,25 +176,6 @@ document.querySelectorAll("[data-comparison]").forEach((comparison) => {
 });
 
 /* -------------------------------------------------------------------------
- * Toggle panels (more bald / more transfer)
- * ------------------------------------------------------------------------- */
-document.querySelectorAll("[data-toggle-panel]").forEach((button) => {
-  const panel = document.getElementById(button.dataset.togglePanel);
-  if (!panel) return;
-
-  const labelTarget = button.querySelector("[data-toggle-text]") || button;
-  const closedLabel = button.dataset.closedLabel || labelTarget.textContent;
-  const openLabel = button.dataset.openLabel || "Hide";
-
-  button.addEventListener("click", () => {
-    const willOpen = panel.hidden;
-    panel.hidden = !willOpen;
-    button.setAttribute("aria-expanded", String(willOpen));
-    labelTarget.textContent = willOpen ? openLabel : closedLabel;
-  });
-});
-
-/* -------------------------------------------------------------------------
  * Abstract expand/collapse
  * ------------------------------------------------------------------------- */
 const abstractToggle = document.querySelector("[data-abstract-toggle]");
@@ -199,22 +199,31 @@ if (abstractToggle && abstractMore) {
  * ------------------------------------------------------------------------- */
 document.querySelectorAll("[data-carousel]").forEach((carousel) => {
   const track = carousel.querySelector("[data-carousel-track]");
-  const slides = Array.from(carousel.querySelectorAll(".transfer-slide"));
+  const slides = Array.from(carousel.querySelectorAll(".panel-slide"));
   const dots = Array.from(carousel.querySelectorAll("[data-carousel-dot]"));
   const prev = carousel.querySelector("[data-carousel-prev]");
   const next = carousel.querySelector("[data-carousel-next]");
+  const status = carousel.querySelector("[data-carousel-status]");
+  const autoplayMs = Number(carousel.dataset.carouselAutoplay || 5000);
 
   if (!track || slides.length === 0) return;
 
   let activeIndex = 0;
   let frame = null;
+  let timer = null;
+
+  const wrapIndex = (index) => {
+    if (slides.length <= 1) return 0;
+    return (index + slides.length) % slides.length;
+  };
 
   const setActive = (index) => {
-    activeIndex = Math.max(0, Math.min(index, slides.length - 1));
+    activeIndex = wrapIndex(index);
     dots.forEach((dot, dotIndex) => {
       if (dotIndex === activeIndex) dot.setAttribute("aria-current", "true");
       else dot.removeAttribute("aria-current");
     });
+    if (status) status.textContent = `${activeIndex + 1} / ${slides.length}`;
   };
 
   const closestSlide = () => {
@@ -236,13 +245,29 @@ document.querySelectorAll("[data-carousel]").forEach((carousel) => {
   };
 
   const goTo = (index) => {
-    const targetIndex = Math.max(0, Math.min(index, slides.length - 1));
-    slides[targetIndex].scrollIntoView({
+    const targetIndex = wrapIndex(index);
+    const target = slides[targetIndex];
+    track.scrollTo({
+      left: target.offsetLeft - track.offsetLeft,
       behavior: prefersReducedMotion ? "auto" : "smooth",
-      block: "nearest",
-      inline: "start",
     });
     setActive(targetIndex);
+  };
+
+  const stopAutoplay = () => {
+    if (!timer) return;
+    window.clearInterval(timer);
+    timer = null;
+  };
+
+  const startAutoplay = () => {
+    stopAutoplay();
+    if (prefersReducedMotion || slides.length <= 1 || !autoplayMs) return;
+    timer = window.setInterval(() => goTo(activeIndex + 1), autoplayMs);
+  };
+
+  const resetAutoplay = () => {
+    startAutoplay();
   };
 
   track.addEventListener("scroll", () => {
@@ -250,24 +275,41 @@ document.querySelectorAll("[data-carousel]").forEach((carousel) => {
     frame = requestAnimationFrame(() => setActive(closestSlide()));
   });
 
-  prev?.addEventListener("click", () => goTo(activeIndex - 1));
-  next?.addEventListener("click", () => goTo(activeIndex + 1));
+  prev?.addEventListener("click", () => {
+    goTo(activeIndex - 1);
+    resetAutoplay();
+  });
+
+  next?.addEventListener("click", () => {
+    goTo(activeIndex + 1);
+    resetAutoplay();
+  });
 
   dots.forEach((dot) => {
-    dot.addEventListener("click", () => goTo(Number(dot.dataset.slide || 0)));
+    dot.addEventListener("click", () => {
+      goTo(Number(dot.dataset.slide || 0));
+      resetAutoplay();
+    });
   });
 
   track.addEventListener("keydown", (event) => {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       goTo(activeIndex - 1);
+      resetAutoplay();
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
       goTo(activeIndex + 1);
+      resetAutoplay();
     }
   });
 
+  ["pointerdown", "focusin", "mouseenter", "touchstart", "wheel"].forEach((eventName) => {
+    carousel.addEventListener(eventName, resetAutoplay, { passive: true });
+  });
+
   setActive(0);
+  startAutoplay();
 });
 
 /* -------------------------------------------------------------------------
