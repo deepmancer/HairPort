@@ -9,14 +9,6 @@
 </p>
 
 <p align="center">
-  <img alt="SIGGRAPH 2026" src="https://img.shields.io/badge/SIGGRAPH-2026-4c6fff">
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-2ea44f"></a>
-  <img alt="Python >= 3.10" src="https://img.shields.io/badge/Python-%3E%3D3.10-3776ab">
-  <img alt="CUDA recommended" src="https://img.shields.io/badge/CUDA-recommended-76b900">
-  <img alt="Source preview" src="https://img.shields.io/badge/Release-source%20preview-f0ad4e">
-</p>
-
-<p align="center">
   <img alt="Paper coming soon" src="https://img.shields.io/badge/Paper-coming%20soon-lightgrey?style=for-the-badge">
   <a href="https://deepmancer.github.io/HairPort/"><img alt="Project page" src="https://img.shields.io/badge/Project%20Page-live-2ea44f?style=for-the-badge"></a>
   <img alt="Video coming soon" src="https://img.shields.io/badge/Video-coming%20soon-lightgrey?style=for-the-badge">
