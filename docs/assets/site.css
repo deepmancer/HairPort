@@ -163,7 +163,7 @@ a {
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(4.7rem, 13vw, 11rem);
+  font-size: clamp(4.7rem, 9vw, 8.2rem);
   line-height: 0.82;
   letter-spacing: 0;
 }
@@ -943,23 +943,11 @@ html.js .reveal.is-visible {
 html.js .hero .reveal {
   opacity: 1;
   transform: translateY(0);
-  animation: hero-rise 620ms ease both;
+  animation: none;
 }
 
 html.js .hero .hero-visual.reveal {
-  animation-delay: 110ms;
-}
-
-@keyframes hero-rise {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  animation: none;
 }
 
 @media (max-width: 1120px) {
