@@ -4,6 +4,18 @@ const prefersReducedMotion = window.matchMedia(
   "(prefers-reduced-motion: reduce)"
 ).matches;
 
+const mediaPreloads = [];
+
+document
+  .querySelectorAll(".method-section img, .transfer-carousel img, .comparison-grid.featured img")
+  .forEach((image) => {
+    image.loading = "eager";
+    const preload = new Image();
+    preload.decoding = "async";
+    preload.src = image.currentSrc || image.src;
+    mediaPreloads.push(preload);
+  });
+
 /* -------------------------------------------------------------------------
  * Mobile navigation
  * ------------------------------------------------------------------------- */
@@ -112,6 +124,10 @@ document.querySelectorAll("[data-toggle-panel]").forEach((button) => {
   const labelTarget = button.querySelector("[data-toggle-text]") || button;
   const closedLabel = button.dataset.closedLabel || labelTarget.textContent;
   const openLabel = button.dataset.openLabel || "Hide";
+  const startsOpen = button.getAttribute("aria-expanded") === "true";
+
+  panel.hidden = !startsOpen;
+  labelTarget.textContent = startsOpen ? openLabel : closedLabel;
 
   button.addEventListener("click", () => {
     const willOpen = panel.hidden;
@@ -185,6 +201,10 @@ if (abstractToggle && abstractMore) {
   const labelEl = abstractToggle.querySelector("[data-toggle-label]");
   const closedText = labelEl?.dataset.closedText || labelEl?.textContent || "Read full abstract";
   const openText = labelEl?.dataset.openText || "Show less";
+  const startsOpen = abstractToggle.getAttribute("aria-expanded") === "true";
+
+  abstractMore.hidden = !startsOpen;
+  if (labelEl) labelEl.textContent = startsOpen ? openText : closedText;
 
   abstractToggle.addEventListener("click", () => {
     const willOpen = abstractMore.hidden;
@@ -207,6 +227,15 @@ document.querySelectorAll("[data-carousel]").forEach((carousel) => {
   const autoplayMs = Number(carousel.dataset.carouselAutoplay || 5000);
 
   if (!track || slides.length === 0) return;
+
+  if (carousel.dataset.carouselRandom === "true" && slides.length > 1) {
+    for (let index = slides.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [slides[index], slides[swapIndex]] = [slides[swapIndex], slides[index]];
+    }
+
+    slides.forEach((slide) => track.appendChild(slide));
+  }
 
   let activeIndex = 0;
   let frame = null;
@@ -270,6 +299,10 @@ document.querySelectorAll("[data-carousel]").forEach((carousel) => {
     startAutoplay();
   };
 
+  const pauseAutoplay = () => {
+    stopAutoplay();
+  };
+
   track.addEventListener("scroll", () => {
     if (frame) cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => setActive(closestSlide()));
@@ -305,6 +338,10 @@ document.querySelectorAll("[data-carousel]").forEach((carousel) => {
   });
 
   ["pointerdown", "focusin", "mouseenter", "touchstart", "wheel"].forEach((eventName) => {
+    carousel.addEventListener(eventName, pauseAutoplay, { passive: true });
+  });
+
+  ["pointerup", "focusout", "mouseleave"].forEach((eventName) => {
     carousel.addEventListener(eventName, resetAutoplay, { passive: true });
   });
 
