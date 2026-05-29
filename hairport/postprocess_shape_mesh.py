@@ -67,7 +67,7 @@ def process_shape_mesh(
             input_glb_path=target_textured_mesh_path,
             output_glb_path=target_textured_mesh_path,
             euler_angles_rad=target_rotation_euler_rad,
-            rotate_fn=apply_rotation,
+            rotate_fn=apply_inverse_rotation,
         )
 
 def process_shape_meshes(
@@ -109,10 +109,7 @@ def process_shape_meshes(
 
     for sample_id in tqdm(sample_ids, desc="Frontalizing Meshes", unit="sample"):
         target_textured_mesh_path = textured_mesh_dir / sample_id / "shape_mesh.glb"
-        if sample_id in to_frontalize_ids:
-            frontalize = True
-        else:
-            frontalize = False
+        should_frontalize = frontalize or sample_id in to_frontalize_ids
 
         if not target_textured_mesh_path.exists():
             continue
@@ -139,7 +136,7 @@ def process_shape_meshes(
         process_shape_mesh(
             target_textured_mesh_path=str(target_textured_mesh_path),
             target_rotation_euler_rad=euler_rad,
-            frontalize=frontalize,
+            frontalize=should_frontalize,
         )
 
 def main(
@@ -159,11 +156,17 @@ def main(
                 f"texture_provider='{texture_provider}'")
     
     output_dir = Path(data_dir)
+    _, _, textured_mesh_dir = _setup_directories(
+        output_dir,
+        shape_provider=shape_provider,
+        texture_provider=texture_provider,
+    )
     
     process_shape_meshes(
         data_dir=output_dir,
         texture_provider=texture_provider,
-        textured_mesh_dir=output_dir / shape_provider
+        textured_mesh_dir=textured_mesh_dir,
+        frontalize=frontalize,
     )
         
 if __name__ == "__main__":

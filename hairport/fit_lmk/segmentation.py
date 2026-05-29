@@ -42,7 +42,7 @@ class FaceSegmenter:
         silh = (np.array(silh_mask) > 50).astype(np.uint8)
 
         # Hair segmentation via SAM 3.1 with "hair" prompt
-        hair_pil_mask, _ = self.sam_extractor.extract_mask(image, text_prompt="hair")
+        hair_pil_mask, _ = self.sam_extractor(image, prompt="hair")
         hair_mask = (np.array(hair_pil_mask) > 127).astype(np.uint8)
 
         # Combine: hair only within silhouette

@@ -22,6 +22,7 @@ def download_checkpoint(
     repo_id: str = HF_REPO_ID,
     cache_dir: str | Path | None = None,
     token: str | None = None,
+    revision: str | None = None,
 ) -> str:
     """Download a LoRA checkpoint from the Hub and return the local path.
 
@@ -48,6 +49,7 @@ def download_checkpoint(
     local_path = hf_hub_download(
         repo_id=repo_id,
         filename=filename,
+        revision=revision,
         cache_dir=cache_dir,
         token=token,
     )

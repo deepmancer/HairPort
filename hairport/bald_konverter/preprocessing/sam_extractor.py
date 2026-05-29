@@ -33,13 +33,20 @@ class SAMMaskExtractor:
 
     def __init__(
         self,
-        model_id: str = "facebook/sam3",
+        model_id: str | None = None,
         confidence_threshold: float = 0.35,
         detection_threshold: float = 0.4,
         device: str = "cuda",
+        revision: str | None = None,
     ):
         from ..config.defaults import SAM_CONFIDENCE_THRESHOLD, SAM_DETECTION_THRESHOLD
+        from hairport.config import get_config
 
+        cfg = get_config()
+        model_id = model_id or cfg.models.sam_bald_konverter
+        revision = (
+            revision if revision is not None else cfg.models.sam_bald_konverter_revision
+        )
         confidence_threshold = confidence_threshold if confidence_threshold != 0.35 else SAM_CONFIDENCE_THRESHOLD
         detection_threshold = detection_threshold if detection_threshold != 0.4 else SAM_DETECTION_THRESHOLD
         from transformers import Sam3Model, Sam3Processor
@@ -48,9 +55,9 @@ class SAMMaskExtractor:
         self.detection_threshold = detection_threshold
         self.device = device
 
-        self._model = Sam3Model.from_pretrained(model_id).to(self.device)
+        self._model = Sam3Model.from_pretrained(model_id, revision=revision).to(self.device)
         self._model.eval()
-        self._processor = Sam3Processor.from_pretrained(model_id)
+        self._processor = Sam3Processor.from_pretrained(model_id, revision=revision)
         logger.info("SAMMaskExtractor (SAM3) loaded on %s", self.device)
 
     # ------------------------------------------------------------------ #

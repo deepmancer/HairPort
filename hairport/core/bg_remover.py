@@ -42,11 +42,13 @@ class BackgroundRemover:
         model_id: str | None = None,
         alpha_threshold: float | None = None,
         device: str | None = None,
+        revision: str | None = None,
     ):
         from hairport.config import get_config
 
         cfg = get_config()
         self.model_id = model_id or cfg.models.ben2
+        self.revision = revision if revision is not None else cfg.models.ben2_revision
         self.alpha_threshold = alpha_threshold if alpha_threshold is not None else cfg.bg_removal.alpha_threshold
         resolved_device = device if device is not None else cfg.device
         if not torch.cuda.is_available() and "cuda" in resolved_device:
@@ -58,7 +60,7 @@ class BackgroundRemover:
         from ben2 import BEN_Base
 
         torch.set_float32_matmul_precision("high")
-        model = BEN_Base.from_pretrained(self.model_id).to(self.device)
+        model = BEN_Base.from_pretrained(self.model_id, revision=self.revision).to(self.device)
         model.eval()
         logger.info("BackgroundRemover (BEN2) loaded on %s", self.device)
         return model

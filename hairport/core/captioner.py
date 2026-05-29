@@ -14,6 +14,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
 
@@ -162,29 +163,58 @@ class CaptionerPipeline:
         model_name: str | None = None,
         dtype: torch.dtype = torch.bfloat16,
         device_map: Union[str, dict] = "cuda",
-        use_flash_attention: bool = True,
+        use_flash_attention: bool | None = None,
         torch_dtype: Optional[torch.dtype] = None,
     ) -> None:
         from hairport.config import get_config
 
         cfg = get_config()
         self.model_name = model_name or cfg.models.captioner
-        self.device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
+        resolved_device = cfg.device
+        if isinstance(device_map, str) and device_map not in {"auto", "balanced", "balanced_low_0", "sequential"}:
+            resolved_device = device_map
+        if not torch.cuda.is_available() and "cuda" in str(resolved_device):
+            resolved_device = "cpu"
+            if isinstance(device_map, str) and "cuda" in device_map:
+                device_map = "cpu"
+        self.device = torch.device(resolved_device)
 
         resolved_dtype = torch_dtype or dtype
+        if use_flash_attention is None:
+            use_flash_attention = find_spec("flash_attn") is not None and "cuda" in str(self.device)
         logger.info("Loading %s (dtype=%s, flash_attn=%s)", self.model_name, resolved_dtype, use_flash_attention)
 
         extra_kwargs: dict = {}
         if use_flash_attention:
             extra_kwargs["attn_implementation"] = "flash_attention_2"
 
-        self.model = Qwen3VLForConditionalGeneration.from_pretrained(
-            self.model_name,
-            torch_dtype=resolved_dtype,
-            device_map=device_map,
-            **extra_kwargs,
+        try:
+            self.model = Qwen3VLForConditionalGeneration.from_pretrained(
+                self.model_name,
+                revision=cfg.models.captioner_revision,
+                torch_dtype=resolved_dtype,
+                device_map=device_map,
+                **extra_kwargs,
+            )
+        except (ImportError, ValueError) as exc:
+            if extra_kwargs.get("attn_implementation") != "flash_attention_2":
+                raise
+            logger.warning(
+                "FlashAttention requested for %s but could not be used; retrying without it: %s",
+                self.model_name,
+                exc,
+            )
+            extra_kwargs.pop("attn_implementation", None)
+            self.model = Qwen3VLForConditionalGeneration.from_pretrained(
+                self.model_name,
+                revision=cfg.models.captioner_revision,
+                torch_dtype=resolved_dtype,
+                device_map=device_map,
+                **extra_kwargs,
+            )
+        self.processor = AutoProcessor.from_pretrained(
+            self.model_name, revision=cfg.models.captioner_revision
         )
-        self.processor = AutoProcessor.from_pretrained(self.model_name)
         if hasattr(self.processor, "tokenizer"):
             self.processor.tokenizer.padding_side = "left"
 
@@ -232,6 +262,7 @@ class CaptionerPipeline:
         return_full_output: bool = False,
         prompt_type: str = "general",
         prompt: Optional[str] = None,
+        seed: Optional[int] = None,
     ) -> str:
         """Caption a single image."""
         image_input = self._resolve_image(image)
@@ -246,16 +277,21 @@ class CaptionerPipeline:
             chat_text, images=[image_input], return_tensors="pt",
         ).to(self.device)
 
-        generated_ids = self.model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
-            repetition_penalty=repetition_penalty,
-            do_sample=do_sample,
-            pad_token_id=getattr(getattr(self.processor, "tokenizer", None), "pad_token_id", None),
-        )
+        with torch.random.fork_rng():
+            if seed is not None and seed >= 0:
+                torch.manual_seed(seed)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(seed)
+            generated_ids = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                repetition_penalty=repetition_penalty,
+                do_sample=do_sample,
+                pad_token_id=getattr(getattr(self.processor, "tokenizer", None), "pad_token_id", None),
+            )
 
         input_len = inputs["input_ids"].shape[1]
         trimmed = generated_ids[0][input_len:]

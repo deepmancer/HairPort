@@ -46,6 +46,7 @@ def load_base_pipeline(
     base_model: str = BASE_MODEL_ID,
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
+    revision: str | None = None,
 ) -> FluxInpaintPipeline:
     """Load the base FLUX inpainting pipeline (no LoRA weights attached).
 
@@ -53,7 +54,9 @@ def load_base_pipeline(
     :class:`BaldKonverterWithSeg` via :meth:`from_pipeline`.
     """
     torch.set_float32_matmul_precision("high")
-    pipe = FluxInpaintPipeline.from_pretrained(base_model, torch_dtype=dtype)
+    pipe = FluxInpaintPipeline.from_pretrained(
+        base_model, revision=revision, torch_dtype=dtype
+    )
     pipe.to(device)
     logger.info("Base FLUX pipeline loaded on %s (dtype=%s)", device, dtype)
     return pipe
@@ -89,10 +92,14 @@ class BaldKonverter:
         base_model: str = BASE_MODEL_ID,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
+        base_model_revision: str | None = None,
+        lora_revision: str | None = None,
     ):
         self.device = device
-        self.pipe = load_base_pipeline(base_model, device, dtype)
-        lora = lora_path or download_checkpoint("wo_seg")
+        self.pipe = load_base_pipeline(
+            base_model, device, dtype, revision=base_model_revision
+        )
+        lora = lora_path or download_checkpoint("wo_seg", revision=lora_revision)
         self.pipe.load_lora_weights(lora)
         logger.info("BaldKonverter (wo_seg) LoRA loaded from %s", lora)
 
@@ -101,12 +108,13 @@ class BaldKonverter:
         cls,
         pipe: FluxInpaintPipeline,
         lora_path: Optional[str] = None,
+        lora_revision: str | None = None,
     ) -> "BaldKonverter":
         """Create from an *existing* pipeline to avoid reloading the base model."""
         obj = cls.__new__(cls)
         obj.device = str(pipe.device)
         obj.pipe = pipe
-        lora = lora_path or download_checkpoint("wo_seg")
+        lora = lora_path or download_checkpoint("wo_seg", revision=lora_revision)
         pipe.load_lora_weights(lora)
         logger.info("BaldKonverter (wo_seg) LoRA attached from %s", lora)
         return obj
@@ -189,10 +197,14 @@ class BaldKonverterWithSeg:
         base_model: str = BASE_MODEL_ID,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
+        base_model_revision: str | None = None,
+        lora_revision: str | None = None,
     ):
         self.device = device
-        self.pipe = load_base_pipeline(base_model, device, dtype)
-        lora = lora_path or download_checkpoint("w_seg")
+        self.pipe = load_base_pipeline(
+            base_model, device, dtype, revision=base_model_revision
+        )
+        lora = lora_path or download_checkpoint("w_seg", revision=lora_revision)
         self.pipe.load_lora_weights(lora)
         logger.info("BaldKonverterWithSeg (w_seg) LoRA loaded from %s", lora)
 
@@ -201,12 +213,13 @@ class BaldKonverterWithSeg:
         cls,
         pipe: FluxInpaintPipeline,
         lora_path: Optional[str] = None,
+        lora_revision: str | None = None,
     ) -> "BaldKonverterWithSeg":
         """Create from an *existing* pipeline to avoid reloading the base model."""
         obj = cls.__new__(cls)
         obj.device = str(pipe.device)
         obj.pipe = pipe
-        lora = lora_path or download_checkpoint("w_seg")
+        lora = lora_path or download_checkpoint("w_seg", revision=lora_revision)
         pipe.load_lora_weights(lora)
         logger.info("BaldKonverterWithSeg (w_seg) LoRA attached from %s", lora)
         return obj

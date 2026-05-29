@@ -37,6 +37,11 @@ def estimate_3d_landmarks(
         ortho_scale = lmk.ortho_scale
     if num_perturbations is None:
         num_perturbations = lmk.num_perturbations
+    if num_perturbations != 0:
+        raise ValueError(
+            "Official HairPort landmark inference supports only the single frontal view; "
+            "num_perturbations must be 0."
+        )
     if angle_range is None:
         angle_range = lmk.angle_range
     if trans_range is None:

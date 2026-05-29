@@ -23,6 +23,8 @@ from hairport.core import SAMMaskExtractor
 from hairport.utility.uncrop_sdxl import Uncropper
 from easy_dwpose import DWposeDetector
 from hairport.config import get_config
+from hairport.data import DatasetManager
+from hairport.runtime import build_provenance, can_reuse_artifact, derive_seed, write_provenance
 
 
 # ============================================================================
@@ -33,7 +35,7 @@ from hairport.config import get_config
 class HairTransferKleinConfig:
     # Model settings
     FLUX_KLEIN_MODEL: str | None = None
-    
+
     # Processing resolution
     PROCESSING_RESOLUTION: int | None = None
     OUTPUT_RESOLUTION: int | None = None
@@ -122,9 +124,11 @@ class HairTransferKleinConfig:
         if self.SUBDIR_TRANSFERRED is None:
             self.SUBDIR_TRANSFERRED = ds.subdir_transferred
         if self.FILE_VIEW_ALIGNED_IMAGE is None:
-            self.FILE_VIEW_ALIGNED_IMAGE = ds.file_target_phase1
+            phase = int(cfg.enhance_view.conditioning_phase)
+            self.FILE_VIEW_ALIGNED_IMAGE = f"target_image_phase_{phase}.png"
         if self.FILE_VIEW_ALIGNED_MASK is None:
-            self.FILE_VIEW_ALIGNED_MASK = ds.file_target_phase1_mask
+            phase = int(cfg.enhance_view.conditioning_phase)
+            self.FILE_VIEW_ALIGNED_MASK = f"target_image_phase_{phase}_mask.png"
         if self.SUBDIR_BLENDING is None:
             self.SUBDIR_BLENDING = ds.subdir_blending
         if self.FILE_POISSON_BLENDED is None:
@@ -178,9 +182,13 @@ def flush_gpu_memory():
 from rembg import remove, new_session
 
 class BackgroundRemover:
-    def __init__(self, device: str | torch.device = 'cuda'):
+    def __init__(self, device: str | torch.device | None = None):
+        if device is None:
+            device = get_config().device
+        if not torch.cuda.is_available() and "cuda" in str(device):
+            device = "cpu"
         self.device = torch.device(device)
-        self._session = new_session("birefnet-general")
+        self._session = new_session(get_config().models.rembg_session)
     
     def remove_background(self, image: Image.Image, refine_foreground: bool = False) -> tuple[Image.Image, Image.Image]:
         foreground = remove(image, session=self._session)
@@ -195,9 +203,14 @@ class DWPoseSingleton:
     @classmethod
     def get_instance(
         cls,
-        device: str = "cuda",
+        device: str | None = None,
         force_reload: bool = False,
     ) -> DWposeDetector:
+        if device is None:
+            device = get_config().device
+        if not torch.cuda.is_available() and "cuda" in str(device):
+            device = "cpu"
+        device = str(device)
         if cls._instance is None or force_reload or cls._device != device:
             if cls._instance is not None:
                 del cls._instance
@@ -234,12 +247,13 @@ class UncropperSingleton:
                 flush_gpu_memory()
             
             from hairport.utility.uncrop_sdxl.uncrop_sdxl import Uncropper, UncropperConfig
+            uncrop_cfg = get_config().uncrop
             config = UncropperConfig(
-                width=1024,
-                height=1024,
+                width=uncrop_cfg.width,
+                height=uncrop_cfg.height,
                 alignment="Middle",
-                overlap_percentage=5,
-                num_inference_steps=12,
+                overlap_percentage=uncrop_cfg.overlap_percentage,
+                num_inference_steps=uncrop_cfg.num_inference_steps,
             )
             cls._uncropper = Uncropper(config)
             cls._uncropper.load_pipeline()
@@ -322,18 +336,24 @@ def should_uncrop_for_3d_aware(
 class BackgroundRemoverSingleton:
     _instance = None
     _session = None
+    _device: str | None = None
     
     @classmethod
-    def get_instance(cls, force_reload: bool = False):
-        if cls._instance is None or force_reload:
+    def get_instance(cls, device: str | None = None, force_reload: bool = False):
+        if device is None:
+            device = get_config().device
+        if not torch.cuda.is_available() and "cuda" in str(device):
+            device = "cpu"
+        if cls._instance is None or force_reload or cls._device != str(device):
             if cls._instance is not None:
                 del cls._instance
                 cls._instance = None
                 flush_gpu_memory()
             
-            cls._session: BackgroundRemover = BackgroundRemover(device="cuda")
+            cls._session = BackgroundRemover(device=device)
             cls._instance = cls
-            print("[BackgroundRemoverSingleton] Initialized")
+            cls._device = str(device)
+            print(f"[BackgroundRemoverSingleton] Initialized on {device}")
         
         return cls._instance
     
@@ -350,6 +370,7 @@ class BackgroundRemoverSingleton:
         if cls._instance is not None:
             cls._session = None
             cls._instance = None
+            cls._device = None
             flush_gpu_memory()
             print("[BackgroundRemoverSingleton] Released")
 
@@ -437,6 +458,7 @@ def prepare_hair_only_image(
     non_hair_color: Tuple[int, int, int] = (180, 180, 180),
     target_size: Tuple[int, int] = (1024, 1024),
     include_body: bool = True,
+    device: str | None = None,
 ) -> Image.Image:
     """Layers: white bg -> gray non-hair -> skeleton -> hair (color)."""
     
@@ -447,18 +469,18 @@ def prepare_hair_only_image(
     if image.size != target_size:
         image = image.resize(target_size, Image.Resampling.LANCZOS)
     
-    return image
     _, silhouette_mask = BackgroundRemoverSingleton.remove_background(image)
     if silhouette_mask.size != target_size:
         silhouette_mask = silhouette_mask.resize(target_size, Image.Resampling.NEAREST)
     
-    # if hair_mask is None:
-    #     hair_mask, _ = extract_hair_mask(image)
-    # if hair_mask.size != target_size:
-    hair_mask = extract_hair_mask(image)[0]
-    hair_mask = hair_mask.resize(target_size, Image.Resampling.NEAREST)
+    if hair_mask is None:
+        hair_mask, _ = extract_hair_mask(image)
+    else:
+        hair_mask = hair_mask.convert("L")
+    if hair_mask.size != target_size:
+        hair_mask = hair_mask.resize(target_size, Image.Resampling.NEAREST)
     
-    dwpose_detector = DWPoseSingleton.get_instance()
+    dwpose_detector = DWPoseSingleton.get_instance(device=device)
     pose_result = dwpose_detector(image, include_hands=False, include_body=include_body, detect_resolution=1024)
     
     if isinstance(pose_result, tuple):
@@ -524,13 +546,15 @@ class HairTransferKleinPipeline:
     def __init__(
         self,
         config: Optional[HairTransferKleinConfig] = None,
-        device: str = "cuda",
+        device: str | None = None,
     ):
         if config is None:
             config = HairTransferKleinConfig()
         
         self.config = config
-        self.device = device
+        self.device = device or get_config().device
+        if not torch.cuda.is_available() and "cuda" in str(self.device):
+            self.device = "cpu"
         self.dtype = torch.bfloat16
         self.pipe = None
         
@@ -540,10 +564,11 @@ class HairTransferKleinPipeline:
         print(f"Loading FLUX.2 Klein from {self.config.FLUX_KLEIN_MODEL}...")
         self.pipe = Flux2KleinPipeline.from_pretrained(
             self.config.FLUX_KLEIN_MODEL,
+            revision=get_config().models.flux_klein_revision,
             torch_dtype=self.dtype,
         )
         self.pipe.to(self.device)
-        BackgroundRemoverSingleton.get_instance()
+        BackgroundRemoverSingleton.get_instance(device=self.device)
         
         print("Pipeline initialized successfully!")
     
@@ -555,7 +580,7 @@ class HairTransferKleinPipeline:
         reference_hair_mask: Optional[Union[str, Path, Image.Image]] = None,
         view_aligned_hair_mask: Optional[Union[str, Path, Image.Image]] = None,
         use_3d_aware: bool = False,
-        use_blending: bool = False,
+        conditioning_source: str = "enhanced",
         output_dir: Optional[str] = None,
         seed: Optional[int] = None,
         num_inference_steps: Optional[int] = None,
@@ -563,6 +588,8 @@ class HairTransferKleinPipeline:
     ) -> Image.Image:
         if seed is None:
             seed = self.config.SEED
+        if seed is None or seed < 0:
+            seed = int(time.time())
         if num_inference_steps is None:
             num_inference_steps = self.config.NUM_INFERENCE_STEPS
         if guidance_scale is None:
@@ -586,25 +613,29 @@ class HairTransferKleinPipeline:
         if view_aligned_hair_mask is not None and isinstance(view_aligned_hair_mask, (str, Path)):
             view_aligned_hair_mask = Image.open(view_aligned_hair_mask).convert("L")
         
-        print(f"Mode: {'3D-Aware' if use_3d_aware else '3D-Unaware'}{' (blending)' if use_blending else ''}")
+        if conditioning_source not in {"enhanced", "blended"}:
+            raise ValueError(f"Unknown conditioning_source: {conditioning_source!r}")
+        print(f"Mode: {'3D-Aware' if use_3d_aware else '3D-Unaware'} ({conditioning_source})")
         print(f"Seed: {seed}, Steps: {num_inference_steps}, CFG: {guidance_scale}")
         needs_uncrop = False
         resize_info = None
         original_bald_size = source_bald_image.size
         
         if use_3d_aware:
-            if isinstance(view_aligned_hair_mask, Image.Image):
-                va_mask_for_check = view_aligned_hair_mask
+            va_mask_for_check = view_aligned_hair_mask
+            if isinstance(va_mask_for_check, (str, Path)):
+                va_mask_for_check = Image.open(va_mask_for_check).convert("L")
+
+            if isinstance(va_mask_for_check, Image.Image):
+                needs_uncrop = should_uncrop_for_3d_aware(
+                    va_mask_for_check,
+                    self.config.PROCESSING_RESOLUTION,
+                    size_threshold=self.config.UNCROP_HAIR_THRESHOLD,
+                    border_threshold=self.config.UNCROP_BORDER_THRESHOLD,
+                )
             else:
-                va_mask_for_check = view_aligned_hair_mask
-            
-            needs_uncrop = True
-            # should_uncrop_for_3d_aware(
-            #     va_mask_for_check,
-            #     self.config.PROCESSING_RESOLUTION,
-            #     size_threshold=self.config.UNCROP_HAIR_THRESHOLD,
-            #     border_threshold=self.config.UNCROP_BORDER_THRESHOLD,
-            # )
+                print("    No view-aligned hair mask available; skipping uncrop check.")
+                needs_uncrop = False
             
             if needs_uncrop:
                 print("  Uncropping source bald image using SDXL...")
@@ -630,28 +661,22 @@ class HairTransferKleinPipeline:
             background_color=self.config.BACKGROUND_COLOR,
             non_hair_color=self.config.NON_HAIR_FOREGROUND_COLOR,
             target_size=target_size,
+            device=self.device,
         )
         
         if use_3d_aware:
             if view_aligned_image is None:
                 raise ValueError("view_aligned_image is required when use_3d_aware=True")
             
-            if use_blending:
-                print("  Using blended image directly (no masking)...")
-                img_view_aligned = view_aligned_image.copy()
-                if img_view_aligned.mode != "RGB":
-                    img_view_aligned = img_view_aligned.convert("RGB")
-                if img_view_aligned.size != target_size:
-                    img_view_aligned = img_view_aligned.resize(target_size, Image.Resampling.LANCZOS)
-            else:
-                print("  Preparing view-aligned hair image...")
-                img_view_aligned = prepare_hair_only_image(
-                    view_aligned_image,
-                    hair_mask=view_aligned_hair_mask,
-                    background_color=self.config.BACKGROUND_COLOR,
-                    non_hair_color=self.config.NON_HAIR_FOREGROUND_COLOR,
-                    target_size=target_size,
-                )
+            print(f"  Preparing {conditioning_source} view-aligned hair image...")
+            img_view_aligned = prepare_hair_only_image(
+                view_aligned_image,
+                hair_mask=view_aligned_hair_mask,
+                background_color=self.config.BACKGROUND_COLOR,
+                non_hair_color=self.config.NON_HAIR_FOREGROUND_COLOR,
+                target_size=target_size,
+                device=self.device,
+            )
             # img1_bald = Image.open("/workspace/outputs/image/side10.png").convert("RGB").resize(target_size, Image.Resampling.LANCZOS)
             image_list = [img1_bald, img_view_aligned, img_reference]
             prompt = _prompt_3d_aware()
@@ -729,15 +754,6 @@ class HairTransferKleinPipeline:
 # Batch Processing
 # ============================================================================
 
-def get_output_dir(
-    pair_dir: Path,
-    config: HairTransferKleinConfig,
-    use_3d_aware: bool,
-) -> Path:
-    mode_dir = config.DIR_3D_AWARE if use_3d_aware else config.DIR_3D_UNAWARE
-    return pair_dir / mode_dir / config.SUBDIR_TRANSFERRED
-
-
 def process_sample(
     folder: Path,
     pipeline: HairTransferKleinPipeline,
@@ -745,36 +761,53 @@ def process_sample(
     config: HairTransferKleinConfig,
     bald_version: str,
     skip_existing: bool = True,
-    use_blending: bool = False,
+    conditioning_source: str = "enhanced",
+    include_3d_unaware: bool = True,
+    shape_provider: str = "hi3dgen",
+    texture_provider: str = "mvadapter",
 ) -> Dict[str, bool]:
-    results = {'3d_aware': False, '3d_unaware': False}
+    results = {
+        '3d_aware': False,
+        '3d_unaware': False,
+        'skipped_3d_aware': False,
+        'skipped_3d_unaware': False,
+        'error': None,
+    }
     folder_name = folder.name
     
     if "_to_" not in folder_name:
         print(f"Skipping {folder_name}: invalid format")
+        results["error"] = f"Invalid pair folder format: {folder_name}"
         return results
     
     try:
         target_id, source_id = folder_name.split("_to_")
     except ValueError:
         print(f"Invalid directory name format: {folder_name}")
+        results["error"] = f"Invalid pair folder format: {folder_name}"
         return results
     
-    pair_dir = folder / bald_version
+    dm = DatasetManager(data_dir)
+    pair_dir = dm.transfer_dir(
+        target_id, source_id, shape_provider, texture_provider
+    ) / bald_version
     if not pair_dir.exists():
         print(f"  Pair directory not found: {pair_dir}")
+        results["error"] = f"Pair directory not found: {pair_dir}"
         return results
     
     dataset_name = data_dir.name
     
     try:
-        source_image_path = pair_dir / config.DIR_SOURCE_OUTPAINTED / config.FILE_OUTPAINTED_IMAGE
+        source_image_path = dm.source_outpainted_file(
+            target_id, source_id, bald_version, shape_provider, texture_provider
+        )
         if not source_image_path.exists():
-            bald_image_dir = data_dir / config.DIR_BALD / bald_version / config.SUBDIR_BALD_IMAGE
-            source_image_path = bald_image_dir / f"{source_id}.png"
+            source_image_path = dm.bald_image(source_id, bald_version)
         
         if not source_image_path.exists():
             print(f"  Source bald image not found")
+            results["error"] = f"Source bald image not found for {folder_name}:{bald_version}"
             return results
         
         if dataset_name == "outputs":
@@ -782,32 +815,49 @@ def process_sample(
         else:
             image_folder = config.DIR_IMAGE_OUTPAINTED
         
-        reference_image_path = data_dir / image_folder / f"{target_id}.png"
+        reference_image_path = dm.source_image(target_id, image_folder)
         if not reference_image_path.exists():
-            reference_image_path = data_dir / config.DIR_IMAGE / f"{target_id}.png"
+            reference_image_path = dm.source_image(target_id, config.DIR_IMAGE)
         
         if not reference_image_path.exists():
             print(f"  Reference image not found for {target_id}")
+            results["error"] = f"Reference image not found for {target_id}"
             return results
-        alignment_dir = folder / config.DIR_ALIGNMENT
+        alignment_dir = dm.alignment_dir(
+            target_id, source_id, bald_version, shape_provider, texture_provider
+        )
         view_aligned_image_path = alignment_dir / config.FILE_VIEW_ALIGNED_IMAGE
         view_aligned_mask_path = alignment_dir / config.FILE_VIEW_ALIGNED_MASK
+        source_outpainted_dir = dm.source_outpainted_dir(
+            target_id, source_id, bald_version, shape_provider, texture_provider
+        )
+        resize_info_path = source_outpainted_dir / "resize_info.json"
         
-        # If use_blending, use poisson_blended.png from blending folder
-        blending_image_path = pair_dir / config.DIR_3D_AWARE / config.SUBDIR_BLENDING / config.FILE_POISSON_BLENDED
+        # Blended conditioning is an explicit alternative to the enhanced view.
+        blending_image_path = dm.poisson_blended_file(
+            target_id, source_id, bald_version, "3d_aware", shape_provider, texture_provider
+        )
         
         has_view_aligned = view_aligned_image_path.exists()
-        has_blending = blending_image_path.exists() if use_blending else False
+        has_blending = blending_image_path.exists()
+        has_camera = dm.camera_params_file(
+            target_id, source_id, bald_version, shape_provider, texture_provider
+        ).exists()
         
-        modes_to_run = ['3d_unaware']
-        if use_blending and has_blending:
+        modes_to_run = ['3d_unaware'] if include_3d_unaware else []
+        if conditioning_source == "blended" and has_blending:
             modes_to_run.append('3d_aware')
-        elif not use_blending and has_view_aligned:
+        elif conditioning_source == "enhanced" and has_view_aligned:
             modes_to_run.append('3d_aware')
+        elif has_camera:
+            results["error"] = (
+                f"Required {conditioning_source} 3D-aware conditioning artifact is missing "
+                f"for {folder_name}:{bald_version}."
+            )
         
         print(f"  Source: {source_image_path}")
         print(f"  Reference: {reference_image_path}")
-        if use_blending:
+        if conditioning_source == "blended":
             if has_blending:
                 print(f"  Blending: {blending_image_path}")
                 print(f"  Modes: 3D-Aware (blending) + 3D-Unaware")
@@ -825,11 +875,41 @@ def process_sample(
             use_3d_aware = (mode == '3d_aware')
             mode_name = "3D-Aware" if use_3d_aware else "3D-Unaware"
             
-            output_dir = get_output_dir(pair_dir, config, use_3d_aware)
-            output_path = output_dir / config.FILE_HAIR_RESTORED
-            if skip_existing and output_path.exists():
+            output_path = dm.hair_restored_file(
+                target_id,
+                source_id,
+                bald_version,
+                mode,
+                conditioning_source if use_3d_aware else None,
+                shape_provider,
+                texture_provider,
+            )
+            output_dir = output_path.parent
+            va_input_path = (
+                blending_image_path if use_3d_aware and conditioning_source == "blended"
+                else view_aligned_image_path if use_3d_aware
+                else reference_image_path
+            )
+            item_seed = derive_seed(
+                config.SEED, "transfer_hair", folder_name, bald_version,
+                conditioning_source if use_3d_aware else "unaware", "generate",
+            )
+            provenance_inputs = [source_image_path, reference_image_path, va_input_path]
+            if resize_info_path.exists():
+                provenance_inputs.append(resize_info_path)
+            provenance = build_provenance(
+                "transfer_hair", seed=item_seed,
+                inputs=provenance_inputs,
+                metadata={
+                    "bald_version": bald_version,
+                    "conditioning_source": conditioning_source if use_3d_aware else "unaware",
+                    "mode": mode,
+                },
+            )
+            if skip_existing and can_reuse_artifact(output_path, provenance):
                 print(f"    [{mode_name}] Output exists, skipping...")
                 results[mode] = True
+                results[f"skipped_{mode}"] = True
                 continue
             
             print(f"    [{mode_name}] Generating...")
@@ -840,14 +920,22 @@ def process_sample(
             va_mask = None
             if use_3d_aware:
                 # Ensure view-aligned mask exists (needed for uncropping check)
-                if not view_aligned_mask_path.exists() and view_aligned_image_path.exists():
+                mask_provenance = build_provenance(
+                    "transfer_hair_conditioning_mask",
+                    seed=item_seed,
+                    inputs=[view_aligned_image_path],
+                    metadata={"bald_version": bald_version, "folder": folder_name},
+                )
+                if (view_aligned_image_path.exists()
+                        and not can_reuse_artifact(view_aligned_mask_path, mask_provenance)):
                     print(f"    Computing view-aligned hair mask...")
                     va_img_for_mask = Image.open(view_aligned_image_path).convert("RGB")
                     computed_mask, mask_score = extract_hair_mask(va_img_for_mask)
                     computed_mask.save(view_aligned_mask_path)
+                    write_provenance(view_aligned_mask_path, mask_provenance)
                     print(f"    Saved mask to {view_aligned_mask_path} (SAM score: {mask_score:.3f})")
                 
-                if use_blending and has_blending:
+                if conditioning_source == "blended" and has_blending:
                     va_image = str(blending_image_path)
                     # Still need mask for uncropping check even when using blending
                     va_mask = str(view_aligned_mask_path) if view_aligned_mask_path.exists() else None
@@ -861,14 +949,13 @@ def process_sample(
                 view_aligned_image=va_image,
                 view_aligned_hair_mask=va_mask,
                 use_3d_aware=use_3d_aware,
-                use_blending=use_blending and use_3d_aware,
+                conditioning_source=conditioning_source,
                 output_dir=str(output_dir),
+                seed=item_seed,
             )
             
             if result is not None:
                 # Check if resize_info.json exists in source outpainted folder
-                source_outpainted_dir = pair_dir / config.DIR_SOURCE_OUTPAINTED
-                resize_info_path = source_outpainted_dir / "resize_info.json"
                 if resize_info_path.exists():
                     print(f"    [{mode_name}] Found resize_info.json, cropping result to original size...")
                     with open(resize_info_path, 'r') as f:
@@ -887,6 +974,16 @@ def process_sample(
                 output_mask_path = output_dir / config.FILE_HAIR_RESTORED_MASK
                 hair_mask, score = extract_hair_mask(result)
                 hair_mask.save(output_mask_path)
+                write_provenance(output_path, provenance)
+                write_provenance(
+                    output_mask_path,
+                    build_provenance(
+                        "transfer_hair_output_mask",
+                        seed=item_seed,
+                        inputs=[output_path],
+                        metadata={"bald_version": bald_version, "mode": mode},
+                    ),
+                )
                 print(f"    [{mode_name}] Saved (SAM score: {score:.3f})")
                 results[mode] = True
         
@@ -896,6 +993,7 @@ def process_sample(
         print(f"  Error: {e}")
         import traceback
         traceback.print_exc()
+        results["error"] = str(e)
         return results
 
 
@@ -906,14 +1004,16 @@ def process_view_aligned_folders(
     config: Optional[HairTransferKleinConfig] = None,
     skip_existing: bool = True,
     bald_version: str = "w_seg",
-    use_blending: bool = False,
+    conditioning_source: str = "enhanced",
+    include_3d_unaware: bool = True,
+    device: str | None = None,
 ) -> Dict[str, int]:
     if config is None:
         config = HairTransferKleinConfig()
     
     data_dir = Path(data_dir)
-    provider_subdir = f"shape_{shape_provider}__texture_{texture_provider}"
-    view_aligned_dir = data_dir / config.DIR_VIEW_ALIGNED / provider_subdir
+    dm = DatasetManager(data_dir)
+    view_aligned_dir = dm.view_aligned_root(shape_provider, texture_provider)
     
     if not view_aligned_dir.exists():
         raise ValueError(f"View aligned directory not found: {view_aligned_dir}")
@@ -925,27 +1025,44 @@ def process_view_aligned_folders(
     
     print(f"\nConfiguration:")
     print(f"  bald_version(s): {bald_versions}")
-    print(f"  use_blending: {use_blending}")
+    if conditioning_source not in {"enhanced", "blended"}:
+        raise ValueError(f"Unknown conditioning_source: {conditioning_source!r}")
+    print(f"  conditioning_source: {conditioning_source}")
     print(f"  Mode selection: Automatic (3D-aware when view-aligned available, always 3D-unaware)")
     all_folders = [f for f in view_aligned_dir.iterdir() if f.is_dir()]
     
     if not all_folders:
         print("No folders found!")
-        return {"processed_3d_aware": 0, "processed_3d_unaware": 0, "errors": 0}
-    
-    timestamp_seed = int(time.time())
+        return {
+            "processed_3d_aware": 0,
+            "processed_3d_unaware": 0,
+            "completed_3d_aware": 0,
+            "completed_3d_unaware": 0,
+            "skipped_3d_aware": 0,
+            "skipped_3d_unaware": 0,
+            "total_samples": 0,
+            "errors": [],
+        }
+
+    timestamp_seed = config.SEED if config.SEED is not None and config.SEED >= 0 else int(time.time())
+    config.SEED = timestamp_seed
     random.seed(timestamp_seed)
     random.shuffle(all_folders)
     print(f"Found {len(all_folders)} samples (shuffle seed: {timestamp_seed})")
     print("\n" + "=" * 60)
     print("Initializing FLUX.2 Klein Hair Transfer Pipeline...")
     print("=" * 60)
-    pipeline = HairTransferKleinPipeline(config)
+    pipeline = HairTransferKleinPipeline(config, device=device)
     
     stats = {
         '3d_aware_success': 0,
         '3d_unaware_success': 0,
+        '3d_aware_completed': 0,
+        '3d_unaware_completed': 0,
+        '3d_aware_skipped': 0,
+        '3d_unaware_skipped': 0,
         'total_samples': 0,
+        'errors': [],
     }
     
     try:
@@ -955,11 +1072,7 @@ def process_view_aligned_folders(
             print(f"{'='*60}")
             
             for i, folder in enumerate(all_folders, 1):
-                # print(f"\n[{i}/{len(all_folders)}] {folder.name} ({bv})")
-                only_to_run_folder_name = "sample_059_to_side10"
-                if only_to_run_folder_name not in folder.name:
-                    # print(f"  Skipping (not the specified folder: {only_to_run_folder_name})")
-                    continue
+                print(f"\n[{i}/{len(all_folders)}] {folder.name} ({bv})")
                 sample_results = process_sample(
                     folder,
                     pipeline,
@@ -967,14 +1080,27 @@ def process_view_aligned_folders(
                     config,
                     bald_version=bv,
                     skip_existing=skip_existing,
-                    use_blending=use_blending,
+                    conditioning_source=conditioning_source,
+                    include_3d_unaware=include_3d_unaware,
+                    shape_provider=shape_provider,
+                    texture_provider=texture_provider,
                 )
                 
                 stats['total_samples'] += 1
                 if sample_results['3d_aware']:
                     stats['3d_aware_success'] += 1
+                    if sample_results['skipped_3d_aware']:
+                        stats['3d_aware_skipped'] += 1
+                    else:
+                        stats['3d_aware_completed'] += 1
                 if sample_results['3d_unaware']:
                     stats['3d_unaware_success'] += 1
+                    if sample_results['skipped_3d_unaware']:
+                        stats['3d_unaware_skipped'] += 1
+                    else:
+                        stats['3d_unaware_completed'] += 1
+                if sample_results.get("error"):
+                    stats["errors"].append(f"{folder.name}:{bv}: {sample_results['error']}")
             
             print(f"\n✓ {bv}: 3D-Aware={stats['3d_aware_success']}, 3D-Unaware={stats['3d_unaware_success']}")
     
@@ -991,7 +1117,12 @@ def process_view_aligned_folders(
     return {
         "processed_3d_aware": stats['3d_aware_success'],
         "processed_3d_unaware": stats['3d_unaware_success'],
+        "completed_3d_aware": stats['3d_aware_completed'],
+        "completed_3d_unaware": stats['3d_unaware_completed'],
+        "skipped_3d_aware": stats['3d_aware_skipped'],
+        "skipped_3d_unaware": stats['3d_unaware_skipped'],
         "total_samples": stats['total_samples'],
+        "errors": stats["errors"],
     }
 
 
@@ -1060,10 +1191,10 @@ def main():
         help="Process all folders"
     )
     parser.add_argument(
-        "--use_blending",
-        action="store_true",
-        default=False,
-        help="Use poisson_blended.png instead of masked view-aligned image for 3D-aware mode"
+        "--conditioning_source",
+        choices=["enhanced", "blended"],
+        default="enhanced",
+        help="3D-aware conditioning evidence to use"
     )
     
     # Pipeline parameters
@@ -1080,6 +1211,7 @@ def main():
         default=1.0,
         help="Guidance scale (default: 1.0 for Klein)"
     )
+    parser.add_argument("--device", type=str, default=None, help="Compute device")
     
     args = parser.parse_args()
     
@@ -1093,7 +1225,7 @@ def main():
         if not all([args.source, args.reference, args.output]):
             parser.error("Single mode requires --source, --reference, and --output")
         
-        pipeline = HairTransferKleinPipeline(config)
+        pipeline = HairTransferKleinPipeline(config, device=args.device)
         
         try:
             use_3d_aware = args.view_aligned is not None
@@ -1116,6 +1248,7 @@ def main():
                     reference_image=args.reference,
                     view_aligned_image=args.view_aligned if is_3d_aware else None,
                     use_3d_aware=is_3d_aware,
+                    conditioning_source=args.conditioning_source,
                     output_dir=mode_output_dir,
                 )
                 output_mask_path = os.path.join(mode_output_dir, config.FILE_HAIR_RESTORED_MASK)
@@ -1134,7 +1267,8 @@ def main():
             config=config,
             skip_existing=args.skip_existing,
             bald_version=args.bald_version,
-            use_blending=args.use_blending,
+            conditioning_source=args.conditioning_source,
+            device=args.device,
         )
         
         print(f"\n{'=' * 60}")

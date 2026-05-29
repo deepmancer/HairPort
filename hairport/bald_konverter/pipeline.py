@@ -121,7 +121,14 @@ class BaldKonverterPipeline:
         flame_dir: Optional[Union[str, Path]] = None,
         lora_path_wo_seg: Optional[str] = None,
         lora_path_w_seg: Optional[str] = None,
+        base_model: str | None = None,
+        base_model_revision: str | None = None,
+        lora_repo: str | None = None,
+        lora_revision: str | None = None,
     ):
+        from hairport.config import get_config
+
+        cfg = get_config()
         if mode not in ("wo_seg", "w_seg", "auto"):
             raise ValueError(f"Invalid mode '{mode}'. Choose from: wo_seg, w_seg, auto")
 
@@ -139,6 +146,16 @@ class BaldKonverterPipeline:
 
         self._lora_wo_seg = lora_path_wo_seg
         self._lora_w_seg = lora_path_w_seg
+        self._base_model = base_model or cfg.models.flux_kontext
+        self._base_model_revision = (
+            base_model_revision if base_model_revision is not None
+            else cfg.models.flux_kontext_revision
+        )
+        self._lora_repo = lora_repo or cfg.models.bald_konverter_repo
+        self._lora_revision = (
+            lora_revision if lora_revision is not None
+            else cfg.models.bald_konverter_revision
+        )
         self._flame_dir = flame_dir
 
         self._active_lora: Optional[str] = None  # track which LoRA is loaded
@@ -151,7 +168,12 @@ class BaldKonverterPipeline:
         if self._pipe is None:
             from .models.konverter import load_base_pipeline
 
-            self._pipe = load_base_pipeline(device=self.device, dtype=self.dtype)
+            self._pipe = load_base_pipeline(
+                base_model=self._base_model,
+                revision=self._base_model_revision,
+                device=self.device,
+                dtype=self.dtype,
+            )
         return self._pipe
 
     def _load_lora(self, variant: str) -> None:
@@ -167,7 +189,9 @@ class BaldKonverterPipeline:
             self._lora_wo_seg if variant == "wo_seg" else self._lora_w_seg
         )
         if lora_path is None:
-            lora_path = download_checkpoint(variant)
+            lora_path = download_checkpoint(
+                variant, repo_id=self._lora_repo, revision=self._lora_revision
+            )
         pipe.load_lora_weights(lora_path)
         self._active_lora = variant
         logger.info("Loaded %s LoRA weights", variant)
@@ -182,9 +206,12 @@ class BaldKonverterPipeline:
     def _get_flame_segmenter(self):
         if self._flame is None:
             from .preprocessing.flame import FLAMESegmenter
+            from hairport.config import get_config
+
+            cfg = get_config()
 
             self._flame = FLAMESegmenter(
-                flame_dir=self._flame_dir or "FLAME2020",
+                flame_dir=self._flame_dir or cfg.paths.flame_dir,
                 device=self.device,
             )
         return self._flame
@@ -320,6 +347,7 @@ class BaldKonverterPipeline:
         self,
         image: Union[str, Path, Image.Image],
         seed: int = DEFAULT_SEED,
+        refine_seed: int | None = None,
         num_inference_steps: int = DEFAULT_NUM_INFERENCE_STEPS,
         guidance_scale: float = DEFAULT_GUIDANCE_SCALE,
         strength: float = DEFAULT_STRENGTH,
@@ -352,7 +380,7 @@ class BaldKonverterPipeline:
         else:
             image = image.convert("RGB")
 
-        gen_kwargs = dict(
+        wo_gen_kwargs = dict(
             seed=seed,
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
@@ -361,7 +389,7 @@ class BaldKonverterPipeline:
 
         # ---- wo_seg only ----------------------------------------------------
         if self.mode == "wo_seg":
-            bald, flux_input_wo = self._run_wo_seg(image, **gen_kwargs)
+            bald, flux_input_wo = self._run_wo_seg(image, **wo_gen_kwargs)
             return BaldResult(
                 bald_image=bald,
                 flux_input_wo_seg=flux_input_wo,
@@ -369,7 +397,7 @@ class BaldKonverterPipeline:
 
         # ---- w_seg or auto --------------------------------------------------
         # Step 1: initial bald via wo_seg
-        bald_wo, flux_input_wo = self._run_wo_seg(image, **gen_kwargs)
+        bald_wo, flux_input_wo = self._run_wo_seg(image, **wo_gen_kwargs)
 
         # Step 2: preprocessing — hair mask from original image
         preproc = self._get_preprocessor()
@@ -396,7 +424,10 @@ class BaldKonverterPipeline:
             hair_mask=prep_result.hair_mask,
             body_mask=body_mask,
             flame_mask=flame_mask,
-            **gen_kwargs,
+            seed=seed if refine_seed is None else refine_seed,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            strength=strength,
         )
 
         return BaldResult(

@@ -10,11 +10,10 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 npm install -g gltfpack
 git lfs install
 
-# ── Clone ──────────────────────────────────────────────────────────
-if [[ ! -d "HairPort/.git" ]]; then
-    git clone git@github.com:deepmancer/HairPort.git
-else
-    echo ">> HairPort already cloned, skipping."
+# ── Repository checkout ────────────────────────────────────────────
+if [[ ! -d "${REPO_ROOT}/.git" ]]; then
+    echo "ERROR: scripts/install.sh must be run from an existing HairPort checkout." >&2
+    exit 1
 fi
 
 # ── Blender ────────────────────────────────────────────────────────
@@ -71,15 +70,16 @@ pip install \
     tensorboard \
     onnxruntime-gpu
 
-pip install trimesh pyrender
+# Embree is preferred by Landmark3D; rtree supports the validated triangle fallback.
+pip install trimesh pyrender embreex rtree
 
 # ── Diffusers, Transformers, Flash Attention (from source) ────────
 PACKAGES_DIR="${REPO_ROOT}/local_packages"
 mkdir -p "${PACKAGES_DIR}"
 pushd "${PACKAGES_DIR}"
 
-[[ -d diffusers/.git ]]        || git clone --recursive git@github.com:huggingface/diffusers.git
-[[ -d transformers/.git ]]     || git clone --recursive git@github.com:huggingface/transformers.git
+[[ -d diffusers/.git ]]        || git clone --recursive https://github.com/huggingface/diffusers.git
+[[ -d transformers/.git ]]     || git clone --recursive https://github.com/huggingface/transformers.git
 
 pip install diffusers/ transformers/ \
     git+https://github.com/huggingface/peft \
@@ -91,7 +91,7 @@ popd
 
 # ── easy_dwpose (from source) ────────────────────────────────────
 [[ -d "${PACKAGES_DIR}/easy_dwpose/.git" ]] || \
-    git clone git@github.com:deepmancer/easy_dwpose.git "${PACKAGES_DIR}/easy_dwpose"
+    git clone https://github.com/deepmancer/easy_dwpose.git "${PACKAGES_DIR}/easy_dwpose"
 pip install -e "${PACKAGES_DIR}/easy_dwpose"
 
 # ── BEN2, rembg, mediapipe ────────────────────────────────────────

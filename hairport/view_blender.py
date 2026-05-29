@@ -32,6 +32,7 @@ from hairport.utility.warper import (
 )
 from hairport.core import BackgroundRemover, SAMMaskExtractor, CodeFormerEnhancer, FacialLandmarkDetector, FLAMEFitter
 from hairport.config import get_config
+from hairport.data import DatasetManager
 
 def flush():
     gc.collect()
@@ -340,10 +341,6 @@ class BlendingConfig:
     RESOLUTION: int | None = None
     OPTIMIZATION_RESOLUTION: int | None = None
     
-    # Enhancement settings
-    CODEFORMER_UPSCALE: int | None = None
-    CODEFORMER_FIDELITY: float | None = None
-    
     # Alignment settings
     ALIGNMENT_IOU_WEIGHT: float | None = None
     ALIGNMENT_LANDMARK_WEIGHT: float | None = None
@@ -383,8 +380,6 @@ class BlendingConfig:
     FILE_FLAME_OVERLAY: str = "flame_overlay.png"
     FILE_HEAD_ORIENTATION: str | None = None
     
-    POISSON_BLEND_STRENGTH: float | None = None
-
     def __post_init__(self):
         cfg = get_config()
         bh = cfg.blend_hair
@@ -393,10 +388,6 @@ class BlendingConfig:
             self.RESOLUTION = bh.resolution
         if self.OPTIMIZATION_RESOLUTION is None:
             self.OPTIMIZATION_RESOLUTION = bh.optimization_resolution
-        if self.CODEFORMER_UPSCALE is None:
-            self.CODEFORMER_UPSCALE = bh.codeformer_upscale
-        if self.CODEFORMER_FIDELITY is None:
-            self.CODEFORMER_FIDELITY = bh.codeformer_fidelity
         if self.ALIGNMENT_IOU_WEIGHT is None:
             self.ALIGNMENT_IOU_WEIGHT = bh.alignment_iou_weight
         if self.ALIGNMENT_LANDMARK_WEIGHT is None:
@@ -428,15 +419,14 @@ class BlendingConfig:
         if self.FILE_LANDMARKS is None:
             self.FILE_LANDMARKS = ds.file_landmarks
         if self.FILE_TARGET_IMAGE_GENERATED is None:
-            self.FILE_TARGET_IMAGE_GENERATED = ds.file_target_phase1
+            phase = int(cfg.enhance_view.conditioning_phase)
+            self.FILE_TARGET_IMAGE_GENERATED = f"target_image_phase_{phase}.png"
         if self.FILE_OUTPAINTED_IMAGE is None:
             self.FILE_OUTPAINTED_IMAGE = "outpainted_image.png"
         if self.FILE_POISSON_BLENDED is None:
             self.FILE_POISSON_BLENDED = ds.file_poisson_blended
         if self.FILE_HEAD_ORIENTATION is None:
             self.FILE_HEAD_ORIENTATION = ds.file_head_orientation
-        if self.POISSON_BLEND_STRENGTH is None:
-            self.POISSON_BLEND_STRENGTH = bh.poisson_blend_strength
 
 
 def requires_3d_lifting(folder_path: Path, bald_version: str) -> bool:
@@ -451,6 +441,7 @@ def get_or_compute_flame_segmentation(
     flame_fitter: 'FLAMEFitter',
     precomputed_path: Optional[Path] = None,
     config: BlendingConfig = None,
+    force_recompute: bool = False,
 ) -> Optional[np.ndarray]:
     """Get FLAME segmentation from precomputed path or compute using FLAMEFitter.
     
@@ -468,7 +459,7 @@ def get_or_compute_flame_segmentation(
         config = BlendingConfig()
     
     # Try to load precomputed segmentation
-    if precomputed_path is not None and precomputed_path.exists():
+    if not force_recompute and precomputed_path is not None and precomputed_path.exists():
         print(f"Loading precomputed FLAME segmentation from: {precomputed_path}")
         try:
             flame_mask = np.array(Image.open(precomputed_path).convert('L'))
@@ -478,7 +469,7 @@ def get_or_compute_flame_segmentation(
     
     # Check if segmentation already exists in output_dir
     output_seg_path = output_dir / config.FILE_FLAME_SEGMENTATION
-    if output_seg_path.exists():
+    if output_seg_path.exists() and not force_recompute:
         print(f"Loading existing FLAME segmentation from: {output_seg_path}")
         try:
             flame_mask = np.array(Image.open(output_seg_path).convert('L'))
@@ -533,9 +524,14 @@ def get_or_compute_flame_segmentation(
         return None
 
 
-def extract_landmarks(image_path: Path, output_path: Path, landmark_detector: FacialLandmarkDetector) -> Path:
+def extract_landmarks(
+    image_path: Path,
+    output_path: Path,
+    landmark_detector: FacialLandmarkDetector,
+    force_recompute: bool = False,
+) -> Path:
     """Extract landmarks from image and save to specific output path."""
-    if output_path.exists():
+    if output_path.exists() and not force_recompute:
         print(f"Landmarks already exist at {output_path}, skipping extraction.")
         return output_path
     
@@ -561,6 +557,7 @@ def load_source_data(
     bald_version: str, 
     config: BlendingConfig,
     landmark_detector: FacialLandmarkDetector = None,
+    force_recompute: bool = False,
 ) -> dict:
     """Load source (outpainted bald) image and landmarks from the pair folder.
     
@@ -593,7 +590,7 @@ def load_source_data(
     source_lmk_data = None
     needs_generation = False
     
-    if source_lmk_path.exists():
+    if source_lmk_path.exists() and not force_recompute:
         try:
             source_lmk_data = np.load(source_lmk_path, allow_pickle=True).item()
             # Validate landmarks data
@@ -655,7 +652,8 @@ def load_target_data(
     use_3d_lifting: bool,
     codeformer_enhancer: CodeFormerEnhancer,
     landmark_detector: FacialLandmarkDetector,
-    config: BlendingConfig
+    config: BlendingConfig,
+    force_recompute: bool = False,
 ) -> dict:
     """Load target image and landmarks from the appropriate location."""
     bald_folder_path = folder_path / bald_version
@@ -663,7 +661,7 @@ def load_target_data(
     
     if use_3d_lifting:
         # 3D lifting case: use alignment/target_image.png
-        alignment_dir = folder_path / config.SUBDIR_ALIGNMENT
+        alignment_dir = bald_folder_path / config.SUBDIR_ALIGNMENT
         target_image_path = alignment_dir / config.FILE_TARGET_IMAGE_GENERATED
         
         if not target_image_path.exists():
@@ -673,7 +671,9 @@ def load_target_data(
 
         # Compute landmarks for enhanced image and save to alignment/landmarks.npy
         target_lmk_path = alignment_dir / "landmarks.npy"
-        target_lmk_path = extract_landmarks(target_image_path, target_lmk_path, landmark_detector)
+        target_lmk_path = extract_landmarks(
+            target_image_path, target_lmk_path, landmark_detector, force_recompute=force_recompute
+        )
         
         if target_lmk_path is None or not target_lmk_path.exists():
             raise FileNotFoundError(f"Failed to extract landmarks for enhanced target image")
@@ -1147,6 +1147,7 @@ def process_view_aligned_folder(
     landmark_detector: FacialLandmarkDetector = None,
     sam_extractor: SAMMaskExtractor = None,
     flame_fitter: FLAMEFitter = None,
+    force_recompute: bool = False,
 ) -> bool:
     if config is None:
         config = BlendingConfig()
@@ -1160,7 +1161,10 @@ def process_view_aligned_folder(
     should_cleanup = False
     if codeformer_enhancer is None:
         print("Initializing CodeFormer enhancer...")
-        codeformer_enhancer = CodeFormerEnhancer(device='cuda', ultrasharp=True)
+        device = get_config().device
+        if not torch.cuda.is_available() and "cuda" in str(device):
+            device = "cpu"
+        codeformer_enhancer = CodeFormerEnhancer(device=device, ultrasharp=True)
         should_cleanup = True
     
     if bg_remover is None:
@@ -1192,8 +1196,7 @@ def process_view_aligned_folder(
     source_outpainted_dir = bald_folder_path / config.DIR_SRC_OUTPAINTED
     source_image_path = source_outpainted_dir / config.FILE_OUTPAINTED_IMAGE
     if not source_image_path.exists():
-        print(f"Source outpainted image not found: {source_image_path}")
-        return False
+        raise FileNotFoundError(f"Source outpainted image not found: {source_image_path}")
     
     # Determine if 3D lifting was used (camera_params.json exists)
     use_3d_lifting = requires_3d_lifting(folder_path, bald_version)
@@ -1210,7 +1213,7 @@ def process_view_aligned_folder(
         blending_3d_aware = dir_3d_aware / config.SUBDIR_BLENDING
         alpha_3d_aware = blending_3d_aware / config.FILE_ALPHA_BLENDED
         poisson_3d_aware = blending_3d_aware / config.FILE_POISSON_BLENDED
-        if not (alpha_3d_aware.exists() and poisson_3d_aware.exists()):
+        if force_recompute or not (alpha_3d_aware.exists() and poisson_3d_aware.exists()):
             modes_to_process.append('3d_aware')
         else:
             print(f"3D aware blending already exists in {blending_3d_aware}")
@@ -1220,21 +1223,20 @@ def process_view_aligned_folder(
         blending_3d_unaware = dir_3d_unaware / config.SUBDIR_BLENDING
         alpha_3d_unaware = blending_3d_unaware / config.FILE_ALPHA_BLENDED
         poisson_3d_unaware = blending_3d_unaware / config.FILE_POISSON_BLENDED
-        if not (alpha_3d_unaware.exists() and poisson_3d_unaware.exists()):
+        if force_recompute or not (alpha_3d_unaware.exists() and poisson_3d_unaware.exists()):
             modes_to_process.append('3d_unaware')
         else:
             print(f"3D unaware blending already exists in {blending_3d_unaware}")
     else:
-        pass
         # Non-3D lifting: only 3D unaware
-        # dir_3d_unaware = bald_folder_path / config.DIR_3D_UNAWARE
-        # blending_3d_unaware = dir_3d_unaware / config.SUBDIR_BLENDING
-        # alpha_3d_unaware = blending_3d_unaware / config.FILE_ALPHA_BLENDED
-        # poisson_3d_unaware = blending_3d_unaware / config.FILE_POISSON_BLENDED
-        # if not (alpha_3d_unaware.exists() and poisson_3d_unaware.exists()):
-        #     modes_to_process.append('3d_unaware')
-        # else:
-        #     print(f"3D unaware blending already exists in {blending_3d_unaware}")
+        dir_3d_unaware = bald_folder_path / config.DIR_3D_UNAWARE
+        blending_3d_unaware = dir_3d_unaware / config.SUBDIR_BLENDING
+        alpha_3d_unaware = blending_3d_unaware / config.FILE_ALPHA_BLENDED
+        poisson_3d_unaware = blending_3d_unaware / config.FILE_POISSON_BLENDED
+        if force_recompute or not (alpha_3d_unaware.exists() and poisson_3d_unaware.exists()):
+            modes_to_process.append('3d_unaware')
+        else:
+            print(f"3D unaware blending already exists in {blending_3d_unaware}")
     
     # Check if all processing is already done
     if not modes_to_process:
@@ -1249,7 +1251,10 @@ def process_view_aligned_folder(
     
     try:
         # Step 1: Load source data (same for both modes)
-        source_data = load_source_data(folder_path, bald_version, config, landmark_detector=landmark_detector)
+        source_data = load_source_data(
+            folder_path, bald_version, config, landmark_detector=landmark_detector,
+            force_recompute=force_recompute,
+        )
         
         # Prepare source image at full resolution
         source_image_full = source_data['image'].convert('RGB').resize(
@@ -1270,9 +1275,8 @@ def process_view_aligned_folder(
             blending_dir = mode_base_dir / config.SUBDIR_BLENDING
             
             if mode == '3d_aware':
-                # Load view-aligned target from 3D lifting
-                # For 3D aware: target is alignment/target_image_phase_1.png
-                alignment_dir = folder_path / config.SUBDIR_ALIGNMENT
+                # Load configured enhanced view-aligned target from 3D lifting.
+                alignment_dir = bald_folder_path / config.SUBDIR_ALIGNMENT
                 target_image_path_3d = alignment_dir / config.FILE_TARGET_IMAGE_GENERATED
                 
                 use_fallback = False
@@ -1282,7 +1286,8 @@ def process_view_aligned_folder(
                 try:
                     target_data = load_target_data(
                         folder_path, data_dir, bald_version, use_3d_lifting, 
-                        codeformer_enhancer, landmark_detector, config
+                        codeformer_enhancer, landmark_detector, config,
+                        force_recompute=force_recompute,
                     )
                     print(f"Using view-aligned target image for 3D aware warping")
                 except (FileNotFoundError, ValueError) as e:
@@ -1320,11 +1325,19 @@ def process_view_aligned_folder(
                 target_data = None
                 fallback_target_image = None
                 
-                target_lmk_path = data_dir / f"{image_folder}_lmk" / target_id / "landmarks.npy"
+                dm = DatasetManager(data_dir)
+                canonical_target_lmk_path = dm.landmarks_file(target_id)
+                legacy_target_lmk_path = data_dir / f"{image_folder}_lmk" / target_id / "landmarks.npy"
+                if canonical_target_lmk_path.exists() or force_recompute:
+                    target_lmk_path = canonical_target_lmk_path
+                elif legacy_target_lmk_path.exists():
+                    target_lmk_path = legacy_target_lmk_path
+                else:
+                    target_lmk_path = canonical_target_lmk_path
                 target_lmk_data = None
                 needs_generation = False
                 
-                if target_lmk_path.exists():
+                if target_lmk_path.exists() and not force_recompute:
                     try:
                         target_lmk_data = np.load(target_lmk_path, allow_pickle=True).item()
                         validate_landmarks_data(target_lmk_data, target_lmk_path, context="target")
@@ -1332,12 +1345,17 @@ def process_view_aligned_folder(
                         print(f"Warning: Invalid target landmarks file: {e}")
                         print(f"Will attempt to regenerate landmarks...")
                         needs_generation = True
-                        try:
-                            target_lmk_path.unlink()
-                        except:
-                            pass
+                        if target_lmk_path == canonical_target_lmk_path:
+                            try:
+                                target_lmk_path.unlink()
+                            except OSError:
+                                pass
+                        target_lmk_path = canonical_target_lmk_path
                 else:
-                    print(f"Target landmarks not found at {target_lmk_path}")
+                    if force_recompute and target_lmk_path.exists():
+                        print(f"Regenerating target landmarks under forced recomputation: {target_lmk_path}")
+                    else:
+                        print(f"Target landmarks not found at {target_lmk_path}")
                     needs_generation = True
                 
                 if needs_generation:
@@ -1350,9 +1368,9 @@ def process_view_aligned_folder(
                             use_fallback = True
                             fallback_target_image = original_target
                         else:
-                            target_lmk_path.parent.mkdir(parents=True, exist_ok=True)
-                            np.save(target_lmk_path, result)
-                            print(f"Saved generated landmarks to: {target_lmk_path}")
+                            canonical_target_lmk_path.parent.mkdir(parents=True, exist_ok=True)
+                            np.save(canonical_target_lmk_path, result)
+                            print(f"Saved generated landmarks to: {canonical_target_lmk_path}")
                             target_lmk_data = result
                     except Exception as e:
                         print(f"Warning: Failed to generate landmarks for target image: {e}")
@@ -1376,7 +1394,8 @@ def process_view_aligned_folder(
             hair_enhanced_path = warping_dir / config.FILE_TARGET_HAIR_ENHANCED
             
             # Step 2 & 3 & 4: Prepare images, align target to source, and save warping results
-            if warped_image_path.exists() and warped_mask_path.exists() and warping_params_path.exists():
+            if (not force_recompute and warped_image_path.exists()
+                    and warped_mask_path.exists() and warping_params_path.exists()):
                 print(f"Warping outputs already exist in {warping_dir}, loading from disk...")
                 warped_image = np.array(Image.open(warped_image_path).convert('RGB'))
                 warped_image_pil = Image.fromarray(warped_image)
@@ -1430,6 +1449,7 @@ def process_view_aligned_folder(
                         flame_fitter=flame_fitter,
                         precomputed_path=None,  # Always compute for source outpainted
                         config=config,
+                        force_recompute=force_recompute,
                     )
                     
                     # Check if source FLAME failed - trigger fallback
@@ -1451,13 +1471,14 @@ def process_view_aligned_folder(
                         print("Getting FLAME segmentation for target image...")
                         if mode == '3d_aware':
                             # For 3D aware: compute and save in alignment folder
-                            alignment_dir = folder_path / config.SUBDIR_ALIGNMENT
+                            alignment_dir = bald_folder_path / config.SUBDIR_ALIGNMENT
                             target_flame_mask = get_or_compute_flame_segmentation(
                                 image=target_data['image'],
                                 output_dir=alignment_dir,
                                 flame_fitter=flame_fitter,
                                 precomputed_path=None,  # Compute for view-aligned target
                                 config=config,
+                                force_recompute=force_recompute,
                             )
                         else:
                             # For 3D unaware: compute FLAME segmentation directly via FLAMEFitter
@@ -1468,6 +1489,7 @@ def process_view_aligned_folder(
                                 flame_fitter=flame_fitter,
                                 precomputed_path=None,
                                 config=config,
+                                force_recompute=force_recompute,
                             )
                         
                         # Check if target FLAME failed - trigger fallback
@@ -1518,14 +1540,14 @@ def process_view_aligned_folder(
                                 print(f"Saved fallback warping results to {warping_dir}")
             
             # Step 5: Extract hair mask for warped image (skip if already exists)
-            if hair_mask_path.exists():
+            if hair_mask_path.exists() and not force_recompute:
                 print(f"Hair mask already exists at {hair_mask_path}, loading from disk...")
                 hair_mask = Image.open(hair_mask_path).convert('L')
             else:
                 hair_mask = extract_hair_mask(warped_image_pil, hair_mask_path, bg_remover, sam_extractor, config)
             
             # Step 6: Apply CodeFormer enhancement to hair region if not already done
-            if hair_enhanced_path.exists():
+            if hair_enhanced_path.exists() and not force_recompute:
                 print(f"Enhanced hair image already exists at {hair_enhanced_path}, loading from disk...")
                 warped_image_for_hair = Image.open(hair_enhanced_path).convert('RGB')
             elif mode == '3d_aware' and use_3d_lifting:
@@ -1575,7 +1597,7 @@ def process_view_aligned_folder(
             del landmark_detector
             del sam_extractor
             flush()
-        return False
+        raise RuntimeError(f"BlendHair failed for {folder_path}: {e}") from e
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Blend hair from view-aligned folders")

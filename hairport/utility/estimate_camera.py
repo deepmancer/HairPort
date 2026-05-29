@@ -155,7 +155,7 @@ def project_points_blender_ortho(
     W = float(W)
     H = float(H)
     dtype = points_world.dtype
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = points_world.device
     cam_location = cam_location.to(device=device, dtype=dtype)
     cam_rotvec   = cam_rotvec.to(device=device, dtype=dtype)
     ortho_scale  = ortho_scale.to(device=device, dtype=dtype)
@@ -315,105 +315,6 @@ class OptimizableCameraModel(nn.Module):
     @property
     def w2c(self) -> torch.Tensor:
         return self.get_w2c()
-
-    # ----------------- projection & MVP -----------------
-
-    def get_proj_mtx(
-        self,
-        image_size=None,
-        near: Optional[float] = None,
-        far: Optional[float] = None,
-    ) -> torch.Tensor:
-        """
-        Single 4x4 orthographic projection matrix for this camera.
-        """
-        if image_size is None:
-            image_size = self.image_size
-        if near is None:
-            near = self.near
-        if far is None:
-            far = self.far
-
-        P = get_ortho_projection_matrix_from_scale(
-            batch_size=1,
-            ortho_scale=self.ortho_scale,
-            image_size=image_size,
-            near=near,
-            far=far,
-            device=self.theta.device,
-        )
-        return P[0]  # (4, 4)
-
-    @property
-    def proj_mtx(self) -> torch.Tensor:
-        return self.get_proj_mtx()
-
-    def get_mvp_mtx(
-        self,
-        image_size=None,
-        near: Optional[float] = None,
-        far: Optional[float] = None,
-    ) -> torch.Tensor:
-        """
-        Model-View-Projection: mvp = proj_mtx @ w2c
-        (assuming model matrix = identity).
-        """
-        P = self.get_proj_mtx(image_size=image_size, near=near, far=far)
-        V = self.get_w2c()
-        return P @ V
-
-    @property
-    def mvp_mtx(self) -> torch.Tensor:
-        return self.get_mvp_mtx()
-
-    # ----------------- NEW: projection_matrix method -----------------
-
-    def get_projection_matrix(
-        self,
-        batch_size: int = 1,
-        image_size=None,
-        near: Optional[float] = None,
-        far: Optional[float] = None,
-    ) -> torch.Tensor:
-        """
-        MVAdapter-style projection matrix method.
-
-        Returns a [batch_size, 4, 4] orthographic projection matrix,
-        using the same convention as get_orthogonal_projection_matrix
-        in the external repo, parameterised by this camera's
-        ortho_scale, image_size, near, far.
-
-        If batch_size > 1, the same matrix is broadcasted along batch.
-        """
-        if image_size is None:
-            image_size = self.image_size
-        if near is None:
-            near = self.near
-        if far is None:
-            far = self.far
-
-        # base [1, 4, 4] projection matrix
-        base_P = get_ortho_projection_matrix_from_scale(
-            batch_size=1,
-            ortho_scale=self.ortho_scale,
-            image_size=image_size,
-            near=near,
-            far=far,
-            device=self.theta.device,
-        )  # (1, 4, 4)
-
-        if batch_size == 1:
-            return base_P
-        else:
-            return base_P.repeat(batch_size, 1, 1)
-
-    @property
-    def projection_matrix(self) -> torch.Tensor:
-        """
-        Convenience alias: same as get_projection_matrix(batch_size=1).
-        Shape: (1, 4, 4)
-        """
-        return self.get_projection_matrix(batch_size=1)
 
     # ----------------- projection & MVP -----------------
 
@@ -884,6 +785,7 @@ def estimate_camera_single_run(
     lr_gamma: float = 0.5,
     verbose: bool = False,
     width: int = 1024,
+    height: Optional[int] = None,
     device: str = "cuda",
     early_stopping: bool = True,
     patience: int = 75,
@@ -897,7 +799,12 @@ def estimate_camera_single_run(
     bbox: dict = None,
     scale_factor: float = 1.0,
 ):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    requested_device = torch.device(device)
+    if requested_device.type == "cuda" and not torch.cuda.is_available():
+        requested_device = torch.device("cpu")
+    device = requested_device
+    if height is None:
+        height = width
     if debug and debug_dir is not None:
         debug_dir = Path(debug_dir)
         debug_dir.mkdir(parents=True, exist_ok=True)
@@ -940,13 +847,12 @@ def estimate_camera_single_run(
                         print(f"\n>>> Iteration {i}: Unfreezing ortho_scale optimization (lr={0.5 * lr:.4f})")
                     break
         optimizer.zero_grad()
-        width = 1024
         uv_proj = project_points_blender_ortho(
             points_world=xyz_ref,
             cam_location=camera_model.location,
             cam_rotvec=camera_model.rotvec,
             ortho_scale=camera_model.ortho_scale,
-            image_size=(width, width),
+            image_size=(width, height),
         )
 
         l1_loss = F.l1_loss(uv_proj, uv_input.to(device))
@@ -1055,6 +961,7 @@ def estimate_camera_multiple_runs(
     lr_gamma: float = 0.5,
     verbose: bool = False,
     width: int = 1024,
+    height: Optional[int] = None,
     device: str = "cuda",
     early_stopping: bool = True,
     patience: int = 75,
@@ -1067,6 +974,8 @@ def estimate_camera_multiple_runs(
     bbox: dict = None,
     scale_factor: float = 1.0,
 ):
+    if height is None:
+        height = width
     if len(init_camera_locations) != len(init_camera_rotations):
         raise ValueError(
             f"Number of locations ({len(init_camera_locations)}) must match "
@@ -1109,6 +1018,7 @@ def estimate_camera_multiple_runs(
                 lr_gamma=lr_gamma,
                 verbose=verbose,
                 width=width,
+                height=height,
                 device=device,
                 early_stopping=early_stopping,
                 patience=patience,
@@ -1364,6 +1274,7 @@ def align_landmarks(
         num_iters=3000,
         lr=0.05,
         width=src_w,
+        height=src_h,
         verbose=True,
         early_stopping=True,
         patience=200,
@@ -1439,6 +1350,7 @@ def align_landmarks(
         num_iters=1500,
         lr=0.025,
         width=src_w,
+        height=src_h,
         verbose=True,
         early_stopping=True,
         patience=100,

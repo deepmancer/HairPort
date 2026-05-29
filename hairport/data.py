@@ -102,6 +102,10 @@ class DatasetManager:
         """Outpainted bald images directory."""
         return self.bald_dir(bald_version) / "image_outpainted"
 
+    def bald_outpainted_file(self, identity_id: str, bald_version: str = "w_seg") -> Path:
+        """Caption/outpainting-stage bald image for an identity."""
+        return self.bald_outpainted_dir(bald_version) / f"{identity_id}.png"
+
     # ------------------------------------------------------------------
     # 3D mesh & landmarks
     # ------------------------------------------------------------------
@@ -111,18 +115,34 @@ class DatasetManager:
         shape_provider: str = "hi3dgen",
         texture_provider: str = "mvadapter",
     ) -> Path:
-        """Directory containing shape mesh for an identity."""
-        if texture_provider == "hunyuan":
-            return self.root / "hunyuan" / identity_id
-        return self.root / texture_provider / shape_provider / identity_id
+        """Canonical input shape-mesh directory for an identity."""
+        return self.root / "shape_mesh" / identity_id
 
     def shape_mesh_file(
         self, identity_id: str,
         shape_provider: str = "hi3dgen",
         texture_provider: str = "mvadapter",
     ) -> Path:
-        """The simplified shape mesh GLB."""
+        """Canonical input ``shape_mesh.glb``."""
         return self.shape_mesh_dir(identity_id, shape_provider, texture_provider) / "shape_mesh.glb"
+
+    def textured_mesh_dir(
+        self, identity_id: str,
+        shape_provider: str = "hi3dgen",
+        texture_provider: str = "mvadapter",
+    ) -> Path:
+        """Directory containing generated/provided textured mesh for an identity."""
+        if texture_provider == "hunyuan":
+            return self.root / "hunyuan" / identity_id
+        return self.root / texture_provider / shape_provider / identity_id
+
+    def textured_mesh_file(
+        self, identity_id: str,
+        shape_provider: str = "hi3dgen",
+        texture_provider: str = "mvadapter",
+    ) -> Path:
+        """The MVAdapter/Hunyuan textured mesh consumed by Landmark3D."""
+        return self.textured_mesh_dir(identity_id, shape_provider, texture_provider) / "textured_mesh.glb"
 
     def landmarks_3d_dir(
         self, identity_id: str,
@@ -181,11 +201,13 @@ class DatasetManager:
     def alignment_dir(
         self,
         target_id: str, source_id: str,
+        bald_version: str = "w_seg",
         shape_provider: str = "hi3dgen",
         texture_provider: str = "mvadapter",
     ) -> Path:
-        """Alignment subdirectory (rendered/enhanced views)."""
-        return self.transfer_dir(target_id, source_id, shape_provider, texture_provider) / "alignment"
+        """Version-scoped alignment subdirectory (rendered/enhanced views)."""
+        return (self.transfer_dir(target_id, source_id, shape_provider, texture_provider)
+                / bald_version / "alignment")
 
     def source_outpainted_dir(
         self,
@@ -197,6 +219,29 @@ class DatasetManager:
         """Source outpainted images for a transfer pair."""
         return (self.transfer_dir(target_id, source_id, shape_provider, texture_provider)
                 / bald_version / "source_outpainted")
+
+    def source_outpainted_file(
+        self,
+        target_id: str, source_id: str,
+        bald_version: str = "w_seg",
+        shape_provider: str = "hi3dgen",
+        texture_provider: str = "mvadapter",
+    ) -> Path:
+        """Outpainted bald source image for a transfer pair."""
+        return self.source_outpainted_dir(
+            target_id, source_id, bald_version, shape_provider, texture_provider
+        ) / "outpainted_image.png"
+
+    def aligned_mesh_file(
+        self,
+        target_id: str, source_id: str,
+        shape_provider: str = "hi3dgen",
+        texture_provider: str = "mvadapter",
+    ) -> Path:
+        """Pair-level target mesh aligned by camera optimization."""
+        return self.transfer_dir(
+            target_id, source_id, shape_provider, texture_provider
+        ) / "aligned_target_mesh.glb"
 
     def camera_params_file(
         self,
@@ -238,12 +283,15 @@ class DatasetManager:
         target_id: str, source_id: str,
         bald_version: str = "w_seg",
         mode: str = "3d_aware",
+        conditioning_source: str | None = None,
         shape_provider: str = "hi3dgen",
         texture_provider: str = "mvadapter",
     ) -> Path:
         """Final transferred hair results directory."""
-        return (self.transfer_dir(target_id, source_id, shape_provider, texture_provider)
-                / bald_version / mode / "transferred_klein")
+        base = self.transfer_dir(target_id, source_id, shape_provider, texture_provider) / bald_version / mode
+        if mode == "3d_aware" and conditioning_source is not None:
+            base = base / conditioning_source
+        return base / "transferred_klein"
 
     # ------------------------------------------------------------------
     # Specific output files
@@ -252,22 +300,42 @@ class DatasetManager:
     def rendered_view_file(
         self,
         target_id: str, source_id: str,
+        bald_version: str = "w_seg",
         shape_provider: str = "hi3dgen",
         texture_provider: str = "mvadapter",
     ) -> Path:
         """MV-Adapter rendered view."""
-        return self.alignment_dir(target_id, source_id, shape_provider, texture_provider) / "target_image.png"
+        return self.alignment_dir(
+            target_id, source_id, bald_version, shape_provider, texture_provider
+        ) / "target_image.png"
 
     def enhanced_view_file(
         self,
         target_id: str, source_id: str,
+        bald_version: str = "w_seg",
         shape_provider: str = "hi3dgen",
         texture_provider: str = "mvadapter",
         phase: int = 1,
     ) -> Path:
         """Enhanced view (phase 1 or 2)."""
-        return (self.alignment_dir(target_id, source_id, shape_provider, texture_provider)
+        if phase not in (1, 2):
+            raise ValueError(f"Enhanced view phase must be 1 or 2, got {phase!r}")
+        return (self.alignment_dir(target_id, source_id, bald_version, shape_provider, texture_provider)
                 / f"target_image_phase_{phase}.png")
+
+    def enhanced_view_mask_file(
+        self,
+        target_id: str, source_id: str,
+        bald_version: str = "w_seg",
+        shape_provider: str = "hi3dgen",
+        texture_provider: str = "mvadapter",
+        phase: int = 1,
+    ) -> Path:
+        """Hair mask for an enhanced view conditioning image."""
+        if phase not in (1, 2):
+            raise ValueError(f"Enhanced view mask phase must be 1 or 2, got {phase!r}")
+        return (self.alignment_dir(target_id, source_id, bald_version, shape_provider, texture_provider)
+                / f"target_image_phase_{phase}_mask.png")
 
     def poisson_blended_file(
         self,
@@ -287,13 +355,23 @@ class DatasetManager:
         target_id: str, source_id: str,
         bald_version: str = "w_seg",
         mode: str = "3d_aware",
+        conditioning_source: str | None = None,
         shape_provider: str = "hi3dgen",
         texture_provider: str = "mvadapter",
     ) -> Path:
         """Final hair-restored image."""
         return self.transferred_dir(
-            target_id, source_id, bald_version, mode, shape_provider, texture_provider
+            target_id, source_id, bald_version, mode, conditioning_source,
+            shape_provider, texture_provider
         ) / "hair_restored.png"
+
+    def pair_decisions_file(
+        self,
+        shape_provider: str = "hi3dgen",
+        texture_provider: str = "mvadapter",
+    ) -> Path:
+        """Generated lift/pose decisions without modifying the input CSV."""
+        return self.view_aligned_root(shape_provider, texture_provider) / "pair_decisions.json"
 
     # ------------------------------------------------------------------
     # Discovery / listing

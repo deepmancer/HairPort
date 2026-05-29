@@ -3,8 +3,8 @@
 # into the modules/ directory.
 #
 # Usage:
-#   bash scripts/setup_submodules.sh        # fresh clone
-#   bash scripts/setup_submodules.sh --pull  # pull latest on every repo
+#   bash scripts/setup_submodules.sh
+# The module revisions below are intentionally immutable for paper inference.
 set -euo pipefail
 
 eval "$(conda shell.bash hook)"
@@ -12,35 +12,34 @@ eval "$(conda shell.bash hook)"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODULES_DIR="${REPO_ROOT}/modules"
-PULL="${1:-}"
-
 mkdir -p "${MODULES_DIR}"
 
-clone_or_update() {
-    local name="$1" url="$2" branch="${3:-}"
+clone_at_commit() {
+    local name="$1" url="$2" commit="$3"
     local dest="${MODULES_DIR}/${name}"
     if [[ -d "${dest}/.git" ]]; then
-        if [[ "${PULL}" == "--pull" ]]; then
-            echo ">> Pulling ${name}..."
-            git -C "${dest}" pull --ff-only
-        else
-            echo ">> ${name} already cloned, skipping. Use --pull to update."
-        fi
+        echo ">> Verifying pinned ${name} revision..."
     else
         echo ">> Cloning ${name}..."
-        if [[ -n "${branch}" ]]; then
-            git clone --depth 1 --branch "${branch}" "${url}" "${dest}"
-        else
-            git clone --depth 1 "${url}" "${dest}"
-        fi
+        git clone "${url}" "${dest}"
     fi
+    git -C "${dest}" fetch origin "${commit}" --depth 1
+    git -C "${dest}" checkout --detach "${commit}"
+    test "$(git -C "${dest}" rev-parse HEAD)" = "${commit}"
 }
 
 # ── CodeFormer ──────────────────────────────────────────────────────
-clone_or_update "CodeFormer" "git@github.com:deepmancer/CodeFormer.git"
+clone_at_commit "CodeFormer" "https://github.com/deepmancer/CodeFormer.git" \
+    "8180c3e9000fbd9d63d22e0df2bb5f991e5a2d01"
 
 # ── MV-Adapter ─────────────────────────────────────────────────────
-clone_or_update "MV-Adapter" "git@github.com:deepmancer/MV-Adapter.git"
+clone_at_commit "MV-Adapter" "https://github.com/deepmancer/MV-Adapter.git" \
+    "849c1a2babdc76c01cbe6158493d750088a3f250"
+
+# ── SHeaP ───────────────────────────────────────────
+clone_at_commit "SHeaP" "https://github.com/deepmancer/SHeaP.git" \
+    "cde7b7a9f0ba28e8250d6fc7100fd985be483134"
+
 # ── MV-Adapter downloads ───────────────────────────────────────────
 echo ">> Setting up MV-Adapter checkpoints..."
 mkdir -p "${MODULES_DIR}/MV-Adapter/checkpoints"
@@ -61,8 +60,7 @@ cd "${REPO_ROOT}"
 
 cd "${REPO_ROOT}"
 
-# ── SHeaP ──────────────────────────────────────────────────────────
-clone_or_update "SHeaP" "git@github.com:deepmancer/SHeaP.git"
+# ── SHeaP downloads ──────────────────────────────────────────────────────────
 cd "${MODULES_DIR}/SHeaP"
 conda activate hairport && python convert_flame.py --flame_base_dir "${REPO_ROOT}/assets/"
 cd "${REPO_ROOT}"
@@ -70,12 +68,12 @@ cd "${REPO_ROOT}"
 # ── Install editable packages where needed ─────────────────────────
 echo ""
 echo ">> Installing SHeaP in editable mode..."
-pip install -e "${MODULES_DIR}/SHeaP" 2>/dev/null || echo "   (SHeaP install skipped — run manually if needed)"
+pip install -e "${MODULES_DIR}/SHeaP"
 
 echo ""
 echo ">> Installing CodeFormer dependencies..."
 if [[ -f "${MODULES_DIR}/CodeFormer/requirements.txt" ]]; then
-    pip install -r "${MODULES_DIR}/CodeFormer/requirements.txt" 2>/dev/null || echo "   (some deps may already be installed)"
+    pip install -r "${MODULES_DIR}/CodeFormer/requirements.txt"
 fi
 
 echo ""

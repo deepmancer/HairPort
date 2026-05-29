@@ -32,15 +32,22 @@ class BackgroundRemover:
 
     def __init__(
         self,
-        model_id: str = "PramaLLC/BEN2",
+        model_id: str | None = None,
         device: str | torch.device = "cuda",
         alpha_threshold: float = 0.5,
+        revision: str | None = None,
     ):
         from ben2 import BEN_Base
+        from hairport.config import get_config
 
+        cfg = get_config()
+        model_id = model_id or cfg.models.ben2
+        revision = revision if revision is not None else cfg.models.ben2_revision
         self.device = torch.device(device)
         self.alpha_threshold = alpha_threshold
-        self._model: nn.Module = BEN_Base.from_pretrained(model_id).to(self.device)
+        self._model: nn.Module = BEN_Base.from_pretrained(
+            model_id, revision=revision
+        ).to(self.device)
         self._model.eval()
         logger.info("BackgroundRemover (BEN2) loaded on %s", self.device)
 

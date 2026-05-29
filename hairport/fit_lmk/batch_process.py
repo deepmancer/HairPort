@@ -16,6 +16,13 @@ def process_batch(
 ):
     with open(config_file, 'r') as f:
         config = json.load(f)
+
+    num_perturbations = config.get('num_perturbations', 0)
+    if num_perturbations != 0:
+        raise ValueError(
+            "Unsupported landmark configuration: num_perturbations must be 0. "
+            "The production HairPort pipeline supports single frontal-view projection only."
+        )
     
     results_summary = []
     
@@ -32,7 +39,7 @@ def process_batch(
                 cam_rot=item.get('cam_rot', [1.5708, 0.0, 0.0]),
                 ortho_scale=item.get('ortho_scale', 1.1),
                 output_dir=item.get('output_dir', f'./output_{idx}'),
-                num_perturbations=config.get('num_perturbations', 4),
+                num_perturbations=num_perturbations,
                 angle_range=config.get('angle_range', 0.15),
                 trans_range=config.get('trans_range', 0.05),
                 resolution=config.get('resolution', 1024),
@@ -76,7 +83,7 @@ def process_batch(
 
 def create_example_config(output_path: str = 'batch_config.json'):
     example_config = {
-        "num_perturbations": 4,
+        "num_perturbations": 0,
         "angle_range": 0.15,
         "trans_range": 0.05,
         "resolution": 1024,

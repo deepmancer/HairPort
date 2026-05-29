@@ -25,6 +25,7 @@ import random
 import sys
 
 from hairport.config import get_config
+from hairport.runtime import can_reuse_artifact, write_provenance
 
 _cfg = get_config()
 _mvadapter_path = str(_cfg.paths.mv_adapter_module)
@@ -76,7 +77,7 @@ class TexturedViewConfig:
 
     # Device settings
     device: str | None = None
-    dtype: torch.dtype = torch.float16
+    dtype: torch.dtype | None = None
 
     def __post_init__(self):
         cfg = get_config()
@@ -118,6 +119,16 @@ class TexturedViewConfig:
         # Device
         if self.device is None:
             self.device = cfg.device
+        if self.dtype is None:
+            dtype_by_name = {
+                "float16": torch.float16,
+                "bfloat16": torch.bfloat16,
+                "float32": torch.float32,
+            }
+            try:
+                self.dtype = dtype_by_name[rv.dtype]
+            except KeyError as exc:
+                raise ValueError(f"Unsupported render_view.dtype: {rv.dtype!r}") from exc
 
 
 
@@ -227,7 +238,7 @@ class CameraParams:
         return cls(
             location=location,
             rotvec=rotvec,
-            ortho_scale=ortho_scale + 0.2,  # Clamp to reasonable range
+            ortho_scale=ortho_scale + get_config().render_view.ortho_scale_offset,
         )
     
     @classmethod
@@ -743,11 +754,14 @@ class TexturedViewGenerator:
         # Prepare pipeline kwargs
         pipe_kwargs = {}
         if config.vae_model is not None:
-            pipe_kwargs["vae"] = AutoencoderKL.from_pretrained(config.vae_model)
+            pipe_kwargs["vae"] = AutoencoderKL.from_pretrained(
+                config.vae_model, revision=get_config().models.sdxl_vae_revision
+            )
         
         # Load base pipeline
         self.pipe = MVAdapterI2MVSDXLPipeline.from_pretrained(
-            config.base_model, 
+            config.base_model,
+            revision=get_config().models.realvis_v4_revision,
             **pipe_kwargs
         )
         
@@ -773,6 +787,7 @@ class TexturedViewGenerator:
         self.pipe.load_custom_adapter(
             config.adapter_path,
             weight_name=config.adapter_weight_name,
+            revision=get_config().models.mv_adapter_revision,
         )
 
         if config.lora_models:
@@ -1049,34 +1064,33 @@ def process_view_aligned_folder(
     save_intermediates: bool = True,
     from_blender: bool = True,
     generator: Optional[TexturedViewGenerator] = None,
+    provenance: Optional[dict] = None,
 ) -> bool:
     """Process a single view-aligned folder. Returns True if successful."""
     
     # Check for required files
     camera_json_path = folder_path / bald_version / "camera_params.json"
     mesh_path = folder_path / "aligned_target_mesh.glb"
-    output_path = folder_path / "alignment" / "target_image.png"
+    output_path = folder_path / bald_version / "alignment" / "target_image.png"
     folder_name = folder_path.name
     
     parent_folder_name = folder_path.parent.name
     
     parts = folder_name.split("_to_")
     if len(parts) != 2:
-        print(f"Skipping {folder_name}: invalid folder name format")
-        return False
+        raise ValueError(f"Invalid view-aligned folder name: {folder_name}")
     
     target_id, source_id = parts
     if not camera_json_path.exists():
-        return False
+        raise FileNotFoundError(f"Camera parameters not found: {camera_json_path}")
     
     if not mesh_path.exists():
         mesh_path = data_dir / "lmk_3d" / parent_folder_name / target_id / "postprocessed_textured_mesh.glb"
         if not mesh_path.exists():
-            print(f"Skipping {folder_name}: mesh file not found")
-            return False
+            raise FileNotFoundError(f"Aligned/postprocessed mesh not found for {folder_name}")
     
     # Skip if already processed
-    if output_path.exists():
+    if provenance is not None and can_reuse_artifact(output_path, provenance):
         print(f"Skipping {folder_path.name}: already processed")
         return False
     
@@ -1097,12 +1111,10 @@ def process_view_aligned_folder(
     prompt_path = data_dir / "prompt" / f"{target_id}.json"
     
     if not reference_image_path.exists():
-        print(f"Skipping {folder_name}: reference image not found")
-        return False
+        raise FileNotFoundError(f"Reference image not found: {reference_image_path}")
     
     if not prompt_path.exists():
-        print(f"Skipping {folder_name}: prompt file not found")
-        return False
+        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
     
     # Load camera parameters
     with open(camera_json_path, 'r') as f:
@@ -1142,15 +1154,14 @@ def process_view_aligned_folder(
         # Save output
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_image.save(output_path)
+        if provenance is not None:
+            write_provenance(output_path, provenance)
         print(f"  Generated image saved to: {output_path}")
         
         return True
         
     except Exception as e:
-        print(f"  Error processing {folder_name}: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+        raise RuntimeError(f"RenderView failed for {folder_name}: {e}") from e
 
 
 if __name__ == "__main__":
@@ -1241,13 +1252,6 @@ if __name__ == "__main__":
     try:
         for bald_version in bald_versions:
             for i, folder in enumerate(all_folders, 1):
-                # Check if already processed (check inside loop for concurrent execution safety)
-                output_path = folder  / "alignment" / "target_image.png"
-                if output_path.exists():
-                    print(f"[{i}/{len(all_folders)}] Skipping {folder.name}: already processed")
-                    skipped_count += 1
-                    continue
-                
                 # Check if camera_params.json exists before processing
                 camera_json_path = folder / bald_version / "camera_params.json"
                 if not camera_json_path.exists():

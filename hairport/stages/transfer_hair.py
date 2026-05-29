@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from hairport.config import get_config, add_config_args, load_config_from_args
+from hairport.runtime import StageSummary
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +44,11 @@ class TransferHairStage:
         seed: int | None = None,
         num_inference_steps: int | None = None,
         guidance_scale: float | None = None,
+        device: str | None = None,
     ):
         cfg = get_config()
         self.seed = seed if seed is not None else cfg.transfer_hair.seed
+        self.device = device if device is not None else cfg.device
         self.num_inference_steps = (
             num_inference_steps if num_inference_steps is not None
             else cfg.transfer_hair.num_inference_steps
@@ -62,14 +65,15 @@ class TransferHairStage:
         texture_provider: str | None = None,
         bald_version: str | None = None,
         skip_existing: bool = True,
-        use_blending: bool = False,
-    ) -> dict:
+        conditioning_sources: list[str] | None = None,
+        seed: int | None = None,
+    ) -> StageSummary:
         """Run batch hair transfer on all view-aligned folders.
 
         Returns
         -------
-        dict
-            Summary with processed counts.
+        StageSummary
+            Summary covering both configured conditioning variants.
         """
         from hairport.postprocessing.restore_hair_klein import (
             HairTransferKleinConfig,
@@ -83,6 +87,13 @@ class TransferHairStage:
             texture_provider = cfg.pipeline.texture_provider
         if bald_version is None:
             bald_version = cfg.pipeline.bald_version
+        if conditioning_sources is None:
+            conditioning_sources = list(cfg.transfer_hair.conditioning_sources)
+        invalid = sorted(set(conditioning_sources) - {"enhanced", "blended"})
+        if not conditioning_sources or invalid:
+            raise ValueError(f"Invalid conditioning_sources: {conditioning_sources}")
+        if seed is not None:
+            self.seed = seed
 
         config = HairTransferKleinConfig()
         config.SEED = self.seed
@@ -92,18 +103,32 @@ class TransferHairStage:
         logger.info(f"TransferHair: data_dir={data_dir}, shape={shape_provider}, "
                      f"texture={texture_provider}, bald={bald_version}")
 
-        results = process_view_aligned_folders(
-            data_dir=str(data_dir),
-            shape_provider=shape_provider,
-            texture_provider=texture_provider,
-            config=config,
-            skip_existing=skip_existing,
-            bald_version=bald_version,
-            use_blending=use_blending,
-        )
-
-        logger.info(f"TransferHair complete: {results}")
-        return results
+        summary = StageSummary(metadata={"conditioning_sources": conditioning_sources})
+        source_results = {}
+        for index, conditioning_source in enumerate(conditioning_sources):
+            results = process_view_aligned_folders(
+                data_dir=str(data_dir),
+                shape_provider=shape_provider,
+                texture_provider=texture_provider,
+                config=config,
+                skip_existing=skip_existing,
+                bald_version=bald_version,
+                conditioning_source=conditioning_source,
+                include_3d_unaware=index == 0,
+                device=self.device,
+            )
+            source_results[conditioning_source] = results
+            summary.attempted += results["total_samples"] * (2 if index == 0 else 1)
+            summary.completed += results["completed_3d_aware"]
+            summary.skipped += results["skipped_3d_aware"]
+            if index == 0:
+                summary.completed += results["completed_3d_unaware"]
+                summary.skipped += results["skipped_3d_unaware"]
+            for error in results.get("errors", []):
+                summary.add_failure(conditioning_source, error)
+        summary.metadata["results"] = source_results
+        logger.info(f"TransferHair complete: {summary.to_dict()}")
+        return summary
 
     def run_single(
         self,
@@ -131,7 +156,7 @@ class TransferHairStage:
         config.NUM_INFERENCE_STEPS = self.num_inference_steps
         config.GUIDANCE_SCALE = self.guidance_scale
 
-        pipeline = HairTransferKleinPipeline(config)
+        pipeline = HairTransferKleinPipeline(config, device=self.device)
         output_dir = Path(output)
         results = {}
 
@@ -180,12 +205,16 @@ def main(argv: list[str] | None = None):
     parser.add_argument("--bald_version", type=str, default=None, choices=["w_seg", "wo_seg", "all"])
     parser.add_argument("--skip_existing", action="store_true", default=True)
     parser.add_argument("--no_skip_existing", action="store_false", dest="skip_existing")
-    parser.add_argument("--use_blending", action="store_true", default=False)
+    parser.add_argument(
+        "--conditioning_sources", nargs="+", choices=["enhanced", "blended"], default=None,
+        help="3D-aware conditioning variants to generate; defaults to configured variants.",
+    )
 
     # Pipeline params
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--num_steps", type=int, default=None)
     parser.add_argument("--guidance_scale", type=float, default=None)
+    parser.add_argument("--device", type=str, default=None)
     add_config_args(parser)
     args = parser.parse_args(argv)
     load_config_from_args(args)
@@ -194,6 +223,7 @@ def main(argv: list[str] | None = None):
         seed=args.seed,
         num_inference_steps=args.num_steps,
         guidance_scale=args.guidance_scale,
+        device=args.device,
     )
 
     if args.mode == "single":
@@ -212,7 +242,8 @@ def main(argv: list[str] | None = None):
             texture_provider=args.texture_provider,
             bald_version=args.bald_version,
             skip_existing=args.skip_existing,
-            use_blending=args.use_blending,
+            conditioning_sources=args.conditioning_sources,
+            seed=args.seed,
         )
 
     print(f"TransferHair: {result}")

@@ -62,76 +62,123 @@ def fit_3d_landmarks(
     lmk_3d_output_dir: str,
     target_textured_mesh_path: str,
     target_rotation_euler_rad: list,
-    camera_location: list = [0.0, -4.0, 0.0],
-    camera_rotation: list = [1.5708, 0.0, 0.0],
-    camera_ortho_scale: float = 1.75,
+    camera_location: list | None = None,
+    camera_rotation: list | None = None,
+    camera_ortho_scale: float | None = None,
+    num_perturbations: int = 0,
+    angle_range: float | None = None,
+    trans_range: float | None = None,
+    resolution: int | None = None,
+    optimize: bool | None = True,
+    device: str | None = None,
+    debug: bool = False,
+    debug_dir: str = "./debug_outputs",
+    super_resolution: bool | None = None,
     frontalize: bool = False,
-):
-    """Fit 3D landmarks to a textured mesh."""
+    force_recompute: bool = True,
+) -> dict:
+    """Fit 3D landmarks and export the normalized postprocessed textured mesh."""
+    from hairport.config import get_config
+
+    cfg = get_config()
+    lmk_cfg = cfg.landmark_3d
+
     lmk_3d_output_dir = Path(lmk_3d_output_dir)
+    lmk_3d_output_dir.mkdir(parents=True, exist_ok=True)
+    target_textured_mesh_path = Path(target_textured_mesh_path)
+
+    if not target_textured_mesh_path.exists():
+        raise FileNotFoundError(f"Textured mesh not found: {target_textured_mesh_path}")
+
+    if camera_location is None:
+        camera_location = list(lmk_cfg.default_cam_location)
+    if camera_rotation is None:
+        camera_rotation = list(lmk_cfg.default_cam_rotation)
+    if camera_ortho_scale is None:
+        camera_ortho_scale = lmk_cfg.textured_mesh_ortho_scale
+    if resolution is None:
+        resolution = lmk_cfg.resolution
+    if device is None:
+        device = cfg.device
+    else:
+        device = str(device)
+    if "cuda" in str(device):
+        import torch
+        if not torch.cuda.is_available():
+            device = "cpu"
+    if super_resolution is None:
+        super_resolution = lmk_cfg.super_resolution
+
     vertex_output_file_path = lmk_3d_output_dir / "vertex_indices.npy"
     
     # Define output path for postprocessed mesh in the lmk_3d directory
-    postprocessed_mesh_path = lmk_3d_output_dir / "postprocessed_textured_mesh.glb"
+    postprocessed_mesh_path = lmk_3d_output_dir / lmk_cfg.postprocessed_mesh_filename
     # Output path for aligned landmark 3D coordinates
     landmark_coords_path = lmk_3d_output_dir / "landmarks_3d.npy"
 
-    if vertex_output_file_path.exists() and postprocessed_mesh_path.exists() and landmark_coords_path.exists():
-        return
+    if (not force_recompute and vertex_output_file_path.exists()
+            and postprocessed_mesh_path.exists() and landmark_coords_path.exists()):
+        return {
+            "skipped": True,
+            "landmarks_3d": str(landmark_coords_path),
+            "vertex_indices": str(vertex_output_file_path),
+            "postprocessed_mesh": str(postprocessed_mesh_path),
+        }
     
+    frontalized_mesh_path = target_textured_mesh_path
     if frontalize:
         logger.info(f"Frontalizing mesh with inverse rotation: {target_rotation_euler_rad}")
-        frontalized_mesh_path = Path(target_textured_mesh_path).parent / "frontalized_temp.glb"
-        _, frontalized_mesh, _ = rotate_glb_mesh(
-            input_glb_path=target_textured_mesh_path,
+        frontalized_mesh_path = lmk_3d_output_dir / "frontalized_temp.glb"
+        rotate_glb_mesh(
+            input_glb_path=str(target_textured_mesh_path),
             output_glb_path=str(frontalized_mesh_path),
             euler_angles_rad=target_rotation_euler_rad,
             rotate_fn=apply_inverse_rotation,
         )
-    else:
-        frontalized_mesh_path = target_textured_mesh_path
-        # Load the mesh directly if not frontalizing, and transform to target coordinate system
-        # to be consistent with the frontalize=True case
-        loaded = trimesh.load(str(target_textured_mesh_path), force='scene')
-        if isinstance(loaded, trimesh.Scene):
-            mesh_glb = list(loaded.geometry.values())[0] if loaded.geometry else None
-            frontalized_mesh = apply_glb_to_target_transform(mesh_glb) if mesh_glb is not None else None
-        elif isinstance(loaded, trimesh.Trimesh):
-            frontalized_mesh = apply_glb_to_target_transform(loaded)
-        else:
-            frontalized_mesh = None
 
     try:
         estimate_3d_landmarks_standalone(
-            mesh_path=frontalized_mesh_path,
+            mesh_path=str(frontalized_mesh_path),
             cam_loc=camera_location,
             cam_rot=camera_rotation,
             ortho_scale=camera_ortho_scale,
-            output_dir=lmk_3d_output_dir,
-            num_perturbations=0,
-            resolution=1024,
-            optimize=True,
-            device='cuda',
+            output_dir=str(lmk_3d_output_dir),
+            num_perturbations=num_perturbations,
+            angle_range=angle_range,
+            trans_range=trans_range,
+            resolution=resolution,
+            optimize=optimize,
+            device=device,
+            debug=debug,
+            debug_dir=debug_dir,
+            super_resolution=super_resolution,
         )
         
         vertex_indices = np.load(vertex_output_file_path)
         _, _, final_landmark_coords = rotate_glb_mesh(
-            input_glb_path=frontalized_mesh_path,
+            input_glb_path=str(frontalized_mesh_path),
             output_glb_path=str(postprocessed_mesh_path),
             rotate_fn=apply_rotation,
             to_normalize_vertice_ids=vertex_indices,
-            target_landmark_extent=TARGET_LANDMARK_EXTENT,
+            target_landmark_extent=lmk_cfg.target_landmark_extent,
         )
         
         # Save the aligned landmark 3D coordinates
-        if final_landmark_coords is not None:
-            np.save(landmark_coords_path, final_landmark_coords)
-            logger.info(f"Saved aligned landmark coordinates to {landmark_coords_path}")
+        if final_landmark_coords is None:
+            raise RuntimeError("Mesh postprocessing did not produce landmark coordinates")
+        np.save(landmark_coords_path, final_landmark_coords)
+        logger.info(f"Saved aligned landmark coordinates to {landmark_coords_path}")
             
         logger.info(f"Saved scaled and centered mesh to {postprocessed_mesh_path}")
-            
+        return {
+            "skipped": False,
+            "landmarks_3d": str(landmark_coords_path),
+            "vertex_indices": str(vertex_output_file_path),
+            "postprocessed_mesh": str(postprocessed_mesh_path),
+        }
     except Exception as e:
         logger.error(f"Error during 3D landmark fitting for {target_textured_mesh_path}: {e}")
+        raise
     finally:
         if frontalize and frontalized_mesh_path != target_textured_mesh_path:
             try:

@@ -1,9 +1,12 @@
 import torch
 import numpy as np
 import trimesh
+import logging
 from typing import Tuple, Optional
 from pathlib import Path
-from scipy.spatial.transform import Rotation as R
+from .transforms import blender_import_rotation
+
+logger = logging.getLogger(__name__)
 
 
 class RayMeshIntersector:
@@ -18,18 +21,7 @@ class RayMeshIntersector:
         
         # Store the transformation that Blender applies for this file type
         # We'll use this to transform rays from render space to mesh space
-        if mesh_ext in {'.glb', '.gltf'}:
-            # Blender applies 90° X-rotation to GLB files
-            # self.blender_transform =  np.eye(3)
-            # R.from_euler('y', 0, degrees=True).as_matrix()
-
-            self.blender_transform = R.from_euler('x', 180, degrees=True).as_matrix()
-        elif mesh_ext in {'.obj', '.ply'}:
-            # Blender applies 180° Y-rotation to OBJ/PLY files
-            self.blender_transform = R.from_euler('y', 180, degrees=True).as_matrix()
-        else:
-            # No transformation for other formats
-            self.blender_transform = np.eye(3)
+        self.blender_transform = blender_import_rotation(mesh_ext)
         
         # Compute inverse transform: this takes rays from render space to mesh space
         self.render_to_mesh_transform = np.linalg.inv(self.blender_transform)
@@ -45,7 +37,55 @@ class RayMeshIntersector:
             device=self.device
         )
         
-        self.trimesh_intersector = trimesh.ray.ray_pyembree.RayMeshIntersector(self.mesh)
+        self.backend = "triangle"
+        try:
+            from trimesh.ray.ray_pyembree import RayMeshIntersector as EmbreeIntersector
+            self.trimesh_intersector = EmbreeIntersector(self.mesh)
+            self.backend = "embree"
+        except (ImportError, AttributeError):
+            logger.warning(
+                "Embree ray backend is unavailable; falling back to trimesh triangle "
+                "intersection. Install the pinned Embree dependency for production performance."
+            )
+            self.trimesh_intersector = trimesh.ray.ray_triangle.RayMeshIntersector(self.mesh)
+
+    @staticmethod
+    def available_backend() -> str:
+        """Report the ray backend that will be used without loading a mesh."""
+        try:
+            from trimesh.ray.ray_pyembree import RayMeshIntersector as _EmbreeIntersector
+            del _EmbreeIntersector
+            return "embree"
+        except (ImportError, AttributeError):
+            return "triangle"
+
+    @staticmethod
+    def preflight_backend() -> str:
+        """Verify the selected backend can execute a minimal intersection."""
+        backend = RayMeshIntersector.available_backend()
+        mesh = trimesh.Trimesh(
+            vertices=np.array([[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [0.0, 1.0, 0.0]]),
+            faces=np.array([[0, 1, 2]]),
+            process=False,
+        )
+        try:
+            if backend == "embree":
+                from trimesh.ray.ray_pyembree import RayMeshIntersector as Intersector
+            else:
+                from trimesh.ray.ray_triangle import RayMeshIntersector as Intersector
+            intersector = Intersector(mesh)
+            intersector.intersects_location(
+                np.array([[0.0, 0.0, 1.0]]),
+                np.array([[0.0, 0.0, -1.0]]),
+                multiple_hits=False,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"Landmark3D ray backend '{backend}' cannot execute intersections. "
+                "Install the pinned Embree backend (preferred) or the trimesh/rtree "
+                "fallback dependencies before inference."
+            ) from exc
+        return backend
     
     def ray_triangle_intersection_batch(
         self, 

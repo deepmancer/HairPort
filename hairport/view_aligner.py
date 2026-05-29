@@ -130,10 +130,10 @@ def compute_lift_3d(
     target_cache = os.path.join(orientation_dir, target_id)
 
     source_head_orientation_data = compute_head_orientation(
-        image_path=source_image_path, cache_dir=source_cache,
+        image_path=source_image_path, cache_dir=source_cache, force=False,
     )
     target_head_orientation_data = compute_head_orientation(
-        image_path=target_image_path, cache_dir=target_cache,
+        image_path=target_image_path, cache_dir=target_cache, force=False,
     )
     
     target_euler_rad = target_head_orientation_data['euler_angles_xyz_radians'][0]
@@ -170,6 +170,8 @@ def compute_outpainting(
     uncropper: Uncropper = None,
     facial_landmark_detector: FacialLandmarkDetector = None,
     enable_outpainting: bool = True,
+    force_recompute: bool = False,
+    seed: int | None = None,
 ) -> bool:
     """Compute outpainting for a source-target pair.
     
@@ -202,17 +204,26 @@ def compute_outpainting(
     source_outpainted_lmk_path = os.path.join(pair_view_aligned_dir, config.DIR_SRC_OUTPAINTED, "landmarks.npy")
     resize_info_path = os.path.join(pair_view_aligned_dir, config.DIR_SRC_OUTPAINTED, "resize_info.json")
     
-    if os.path.exists(source_uncropped_path) and os.path.exists(source_outpainted_lmk_path) and os.path.exists(resize_info_path):
+    if (not force_recompute and os.path.exists(source_uncropped_path)
+            and os.path.exists(source_outpainted_lmk_path) and os.path.exists(resize_info_path)):
         print(f"Skipping outpainting (already exists): {target_id} -> {source_id}")
         return False
 
     # Load images and landmarks
     source_image_path = os.path.join(data_dir, "bald", bald_version, "image", f"{source_id}.png")
+    qwen_outpainted_path = os.path.join(
+        data_dir, "bald", bald_version, "image_outpainted", f"{source_id}.png"
+    )
     source_lmk_path = os.path.join(lmk_dir, source_id, config.FILE_LANDMARKS)
     target_lmk_path = os.path.join(lmk_dir, target_id, config.FILE_LANDMARKS)
     source_prompt_path = os.path.join(prompt_dir, f"{source_id}.json")
 
-    source_image = Image.open(source_image_path).convert("RGB").resize((1024, 1024), Image.Resampling.LANCZOS)
+    if enable_outpainting:
+        source_image_input_path = source_image_path
+    else:
+        source_image_input_path = qwen_outpainted_path if os.path.exists(qwen_outpainted_path) else source_image_path
+
+    source_image = Image.open(source_image_input_path).convert("RGB").resize((1024, 1024), Image.Resampling.LANCZOS)
     os.makedirs(os.path.dirname(source_uncropped_path), exist_ok=True)
 
     if not enable_outpainting:
@@ -220,7 +231,10 @@ def compute_outpainting(
         # Create an identity resize_info (image fills entire canvas with no transformation)
         source_image.save(source_uncropped_path)
         source_uncropped = source_image  # Use source_image as source_uncropped for landmark detection
-        print(f"Saved source image directly (outpainting disabled): {source_uncropped_path}")
+        print(
+            "Saved source image directly (outpainting disabled): "
+            f"{source_uncropped_path} from {source_image_input_path}"
+        )
         
         # Identity resize_info: image fills the entire 1024x1024 canvas
         resize_info = {
@@ -253,6 +267,7 @@ def compute_outpainting(
             source_landmark_path=target_lmk_path,
             prompt=source_prompt + " " + source_background_prompt,
             safeguard_resolution=5.0,
+            seed=seed,
         )
         
         source_uncropped.resize((1024, 1024), Image.Resampling.LANCZOS).save(source_uncropped_path)
@@ -284,6 +299,7 @@ def run_camera_optimization(
     bald_version: str = "w_seg",
     debug: bool = False,
     config: Config = None,
+    force_recompute: bool = False,
 ) -> bool:
     """Run camera optimization for a source-target pair that requires 3D lifting.
     Assumes outpainting has already been computed.
@@ -312,7 +328,7 @@ def run_camera_optimization(
 
     # Skip if camera params already exist
     camera_params_path = os.path.join(pair_view_aligned_dir, config.FILE_CAMERA_PARAMS)
-    if os.path.exists(camera_params_path):
+    if os.path.exists(camera_params_path) and not force_recompute:
         print(f"Skipping camera optimization (already exists): {target_id} -> {source_id}")
         return False
 
@@ -323,10 +339,12 @@ def run_camera_optimization(
     source_head_orientation_data = compute_head_orientation(
         image_path=source_image_path,
         cache_dir=os.path.join(orientation_dir, source_id),
+        force=False,
     )
     target_head_orientation_data = compute_head_orientation(
         image_path=target_image_path,
         cache_dir=os.path.join(orientation_dir, target_id),
+        force=False,
     )
 
     target_euler_rad = target_head_orientation_data['euler_angles_xyz_radians'][0]
@@ -335,6 +353,21 @@ def run_camera_optimization(
     # Load 3D landmark vertex indices
     target_lmk_3d_dir = os.path.join(lmk_3d_dir, target_id)
     lmk_3d_vertex_indices_path = os.path.join(target_lmk_3d_dir, config.FILE_VERTEX_INDICES)
+    target_mesh_path = os.path.join(lmk_3d_dir, target_id, config.FILE_TEXTURED_MESH)
+    target_landmarks_path = os.path.join(target_lmk_3d_dir, "landmarks_3d.npy")
+    missing_3d_outputs = [
+        path for path in (lmk_3d_vertex_indices_path, target_landmarks_path, target_mesh_path)
+        if not os.path.exists(path)
+    ]
+    if missing_3d_outputs:
+        input_mesh_dir = get_textured_mesh_dir(data_dir, shape_provider, texture_provider)
+        expected_input_mesh = os.path.join(input_mesh_dir, target_id, "textured_mesh.glb")
+        raise FileNotFoundError(
+            "Missing Landmark3D postprocess outputs for "
+            f"{target_id}: {missing_3d_outputs}. Expected Landmark3D to consume "
+            f"the textured mesh at {expected_input_mesh} and produce "
+            f"{config.FILE_TEXTURED_MESH} plus landmarks_3d.npy before align_view."
+        )
     lmk_3d_vertex_indices = torch.from_numpy(np.load(lmk_3d_vertex_indices_path))
 
     # Load outpainted source data
@@ -345,8 +378,6 @@ def run_camera_optimization(
         raise FileNotFoundError(f"Outpainting not found for {target_id} -> {source_id}. Run outpainting first.")
     
     source_lmk_data = np.load(source_outpainted_lmk_path, allow_pickle=True).item()
-    target_mesh_path = os.path.join(lmk_3d_dir, target_id, config.FILE_TEXTURED_MESH)
-
     print("Running camera optimization for 3D lifted render.")
 
     # Align landmarks and optimize camera
@@ -418,7 +449,12 @@ def filter_ids(all_ids: list, config: Config) -> list:
     ]
 
 
-def prepare_pairs(data_dir: str, config: Config, pairs_csv_file: str = None) -> list:
+def prepare_pairs(
+    data_dir: str,
+    config: Config,
+    pairs_csv_file: str = None,
+    decision_manifest_path: str | Path | None = None,
+) -> list:
     """Load transfer pairs from ``pairs.csv``.
 
     When ``lift_3d`` and ``head_diff_angle`` columns are fully populated the
@@ -445,14 +481,14 @@ def prepare_pairs(data_dir: str, config: Config, pairs_csv_file: str = None) -> 
 
     print(f"Reading pairs from CSV: {csv_path}")
     pairs = []
-    rows_data = []
+    decisions = []
     has_lift_3d_column = False
     has_head_diff_angle_column = False
-    needs_update = False
+    errors = []
     
     with open(csv_path, 'r') as f:
         reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames
+        fieldnames = reader.fieldnames or []
         has_lift_3d_column = 'lift_3d' in fieldnames if fieldnames else False
         has_head_diff_angle_column = 'head_diff_angle' in fieldnames if fieldnames else False
         
@@ -465,34 +501,42 @@ def prepare_pairs(data_dir: str, config: Config, pairs_csv_file: str = None) -> 
                 has_head_diff_angle_column and 'head_diff_angle' in row and row['head_diff_angle'] != ''):
                 lift_3d = row['lift_3d'].lower() in ('true', '1', 'yes')
                 head_diff_angle = float(row['head_diff_angle'])
+                status = "provided"
             else:
                 # Compute lift_3d and head_diff_angle via FLAMEFitter
                 try:
                     lift_3d, head_diff_angle = compute_lift_3d(data_dir, target_id, source_id, config)
-                    needs_update = True
+                    status = "computed"
                 except Exception as e:
-                    print(f"Warning: Could not compute lift_3d for {target_id} -> {source_id}: {e}")
-                    lift_3d = False
-                    head_diff_angle = 0.0
-                    needs_update = True
-            
+                    message = f"Could not compute lift decision for {target_id}->{source_id}: {e}"
+                    errors.append(message)
+                    decisions.append({
+                        "target_id": target_id, "source_id": source_id,
+                        "status": "failed", "error": str(e),
+                    })
+                    continue
+
             pairs.append((target_id, source_id, lift_3d))
-            row_data = {
-                'target_id': target_id, 
-                'source_id': source_id, 
-                'lift_3d': str(lift_3d),
-                'head_diff_angle': str(head_diff_angle)
-            }
-            rows_data.append(row_data)
-    
-    # Update CSV if lift_3d or head_diff_angle column was missing or had empty values
-    if needs_update or not has_lift_3d_column or not has_head_diff_angle_column:
-        print(f"Updating CSV with lift_3d and head_diff_angle columns: {csv_path}")
-        with open(csv_path, 'w', newline='') as f:
-            fieldnames = ['target_id', 'source_id', 'lift_3d', 'head_diff_angle']
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows_data)
+            decisions.append({
+                "target_id": target_id,
+                "source_id": source_id,
+                "status": status,
+                "lift_3d": lift_3d,
+                "head_diff_angle": head_diff_angle,
+            })
+
+    if decision_manifest_path is None:
+        decision_manifest_path = Path(data_dir) / "pair_decisions.json"
+    decision_manifest_path = Path(decision_manifest_path)
+    decision_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_manifest = decision_manifest_path.with_suffix(f"{decision_manifest_path.suffix}.tmp")
+    with open(temp_manifest, "w") as handle:
+        json.dump({"pairs_csv": str(csv_path), "decisions": decisions}, handle, indent=2)
+    temp_manifest.replace(decision_manifest_path)
+    print(f"Wrote derived pair decisions to: {decision_manifest_path}")
+
+    if errors:
+        raise RuntimeError("; ".join(errors))
     
     print(f"Loaded {len(pairs)} pairs from CSV")
     return pairs

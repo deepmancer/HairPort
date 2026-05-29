@@ -1,0 +1,91 @@
+# HairPort runtime requirements (inference-focused + repo utilities)
+# Python version: 3.10
+#
+# For exact paper reproduction, run:
+#   python -m hairport.preflight
+#   bash scripts/export_environment_lock.sh
+# and use the generated requirements.inference.lock.txt.
+
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+# Core DL stack (CUDA 12.8 wheels)
+torch==2.9.0
+torchvision==0.24.0
+torchaudio==2.9.0
+
+# Config and runtime
+omegaconf
+accelerate
+safetensors
+packaging
+tqdm
+
+# Diffusion / model ecosystem
+diffusers
+transformers
+peft
+huggingface_hub
+sentence-transformers
+
+# Image / vision / geometry
+Pillow
+numpy==1.26.4
+scipy
+opencv-python
+scikit-image
+mediapipe==0.10.20
+trimesh
+pyrender
+embreex
+rtree
+roma
+
+# Segmentation / background removal
+rembg[gpu]
+git+https://github.com/PramaLLC/BEN2.git
+
+# Rendering / mesh / graphics
+bpy==4.0.0
+fake-bpy-module
+open3d
+pymeshlab
+
+# Utilities used across scripts and tooling
+pandas
+imageio
+matplotlib
+plotly
+dash
+psutil
+ninja
+ftfy
+regex
+nltk
+wandb
+gdown
+tensorboard
+onnxruntime-gpu
+requests
+PyYAML
+chumpy
+albumentations
+einops
+typing_extensions
+
+# CUDA-heavy geometry deps used by setup/install scripts
+fvcore
+iopath
+git+https://github.com/facebookresearch/pytorch3d.git@stable
+git+https://github.com/NVlabs/nvdiffrast.git
+
+# Project-specific helper package used in postprocessing
+git+https://github.com/deepmancer/easy_dwpose.git
+
+# Optional training-only dependencies referenced in bald_konverter/toolkit
+# Uncomment if you plan to run training or advanced toolkit features.
+# bitsandbytes
+# optimum
+# xformers
+# lion-pytorch
+# dadaptation
+# oyaml

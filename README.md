@@ -118,13 +118,13 @@ cd HairPort
 
 ### 5. Set up external modules
 
-This clones CodeFormer, MV-Adapter, and SHeaP into `modules/`:
+This clones CodeFormer, MV-Adapter, and SHeaP at the pinned inference revisions in the setup script:
 
 ```bash
 bash scripts/setup_submodules.sh
 ```
 
-Hi3DGen is not bundled. Generate textured 3D head meshes externally and place them in the expected data layout before running the full transfer pipeline.
+Hi3DGen is not bundled. Generate shape meshes externally and place them at `shape_mesh/<id>/shape_mesh.glb` before running the full transfer pipeline.
 
 ### 6. Add FLAME assets
 
@@ -143,6 +143,20 @@ assets/flame/FLAME2020/
 ```text
 assets/body_models/landmarks/flame/mediapipe_landmark_embedding.npz
 ```
+
+Validate external modules and user-supplied assets before beginning GPU inference:
+
+```bash
+python -m hairport.preflight
+```
+
+After the validated GPU smoke run, export the exact publication environment lock:
+
+```bash
+bash scripts/export_environment_lock.sh
+```
+
+Commit the generated `requirements.inference.lock.txt` alongside the immutable `models.*_revision` settings used for reported results.
 
 ### 7. Log in to Hugging Face
 
@@ -163,27 +177,30 @@ This example transfers the **reference hairstyle** from `reference.png` onto the
 ```bash
 mkdir -p my_project/image
 mkdir -p my_project/matted_image
+mkdir -p my_project/matted_image_centered
 
 cp source.png    my_project/image/source.png
 cp reference.png my_project/image/reference.png
+cp source.png    my_project/matted_image_centered/source.png
+cp reference.png my_project/matted_image_centered/reference.png
 ```
 
 The filename stem becomes the identity ID used throughout the pipeline.
 
-### 2. Add 3D head meshes
+### 2. Add canonical shape meshes
 
-HairPort requires a textured 3D head mesh for each identity. Generate these externally using a reconstruction tool such as Hi3DGen, Hunyuan3D, or your own pipeline.
+HairPort expects user-provided shape meshes under `shape_mesh/`. Stage 3 then runs MVAdapter texturing and writes `textured_mesh.glb` outputs under `mvadapter/<shape_provider>/<id>/textured_mesh.glb`.
 
 ```bash
-mkdir -p my_project/mvadapter/hi3dgen/source
-mkdir -p my_project/mvadapter/hi3dgen/reference
+mkdir -p my_project/shape_mesh/source
+mkdir -p my_project/shape_mesh/reference
 
 # Required files:
-# my_project/mvadapter/hi3dgen/source/shape_mesh.glb
-# my_project/mvadapter/hi3dgen/reference/shape_mesh.glb
+# my_project/shape_mesh/source/shape_mesh.glb
+# my_project/shape_mesh/reference/shape_mesh.glb
 ```
 
-Stage 3 simplifies and frontalizes meshes, but it does not generate them.
+For MVAdapter texturing, centered mattes are required at `matted_image_centered/<id>.png`.
 
 ### 3. Create transfer pairs
 
@@ -194,7 +211,7 @@ target_id,source_id,lift_3d,head_diff_angle
 reference,source,True,0.98
 ```
 
-`target_id` is the identity providing the **reference hairstyle**. `source_id` is the identity providing the **source face**. The `lift_3d` and `head_diff_angle` columns are optional; if omitted, they are computed automatically.
+`target_id` is the identity providing the **reference hairstyle**. `source_id` is the identity providing the **source face**. The `lift_3d` and `head_diff_angle` columns are optional; if omitted, they are computed automatically and written to generated `pair_decisions.json` output. Input `pairs.csv` is never modified.
 
 ### 4. Run HairPort
 
@@ -208,8 +225,11 @@ python -m hairport.pipeline \
 
 ### 5. Find the output
 
+The full 3D-aware run produces both official conditioning variants:
+
 ```text
-my_project/view_aligned/shape_hi3dgen__texture_mvadapter/reference_to_source/w_seg/3d_aware/transferred_klein/hair_restored.png
+my_project/view_aligned/shape_hi3dgen__texture_mvadapter/reference_to_source/w_seg/3d_aware/enhanced/transferred_klein/hair_restored.png
+my_project/view_aligned/shape_hi3dgen__texture_mvadapter/reference_to_source/w_seg/3d_aware/blended/transferred_klein/hair_restored.png
 ```
 
 Depending on GPU memory and model cache state, the full pipeline can take several minutes per transfer pair.
@@ -240,13 +260,13 @@ for r in results:
 |---|-------|--------------|
 | 1 | **Baldify** | Generate a realistic bald source portrait using the Bald Converter. |
 | 2 | **Caption** | Outpaint bald images and generate text descriptions with Qwen Image-Edit. |
-| 3 | **Shape Mesh** | Simplify and frontalize externally generated 3D head meshes. |
-| 4 | **Landmark 3D** | Estimate 3D facial landmarks with Blender renders and MediaPipe fusion. |
+| 3 | **Shape Mesh** | Texture canonical `shape_mesh/<id>/shape_mesh.glb` inputs with MVAdapter. |
+| 4 | **Landmark 3D** | Estimate 3D facial landmarks from the supported single frontal Blender render. |
 | 5 | **Align View** | Optimize camera alignment from reference hairstyle to source face. |
-| 6 | **Render View** | Generate textured target-hair views with MV-Adapter and SDXL. |
+| 6 | **Render View** | Render target-hair alignment views from the postprocessed textured mesh. |
 | 7 | **Enhance View** | Refine rendered views with FLUX.2 Klein 9B and CodeFormer. |
 | 8 | **Blend Hair** | Warp and Poisson-blend enhanced hair onto the bald source. |
-| 9 | **Transfer Hair** | Synthesize the final 3D-aware hairstyle transfer. |
+| 9 | **Transfer Hair** | Synthesize final outputs for enhanced-view and blended-view conditioning. |
 
 Run a subset of stages when debugging:
 
@@ -273,11 +293,15 @@ data_dir/
 │   ├── source.png
 │   └── reference.png
 ├── matted_image/                   # Background-removed images
+├── matted_image_centered/          # Centered mattes used for MVAdapter texturing
 ├── pairs.csv                       # Transfer pairs
 │
-├── mvadapter/hi3dgen/              # User-provided 3D head meshes
+├── shape_mesh/                     # User-provided input meshes
 │   ├── source/shape_mesh.glb
 │   └── reference/shape_mesh.glb
+├── mvadapter/hi3dgen/              # Generated textured meshes (Stage 3)
+│   ├── source/textured_mesh.glb
+│   └── reference/textured_mesh.glb
 │
 ├── bald/
 │   └── w_seg/
@@ -285,18 +309,20 @@ data_dir/
 │       └── image_outpainted/       # Outpainted bald images
 ├── lmk_3d/
 │   └── shape_hi3dgen__texture_mvadapter/
-│       └── <identity>/landmarks_3d.npy
+│       └── <identity>/
+│           ├── postprocessed_textured_mesh.glb
+│           └── landmarks_3d.npy
 │
 └── view_aligned/
     └── shape_hi3dgen__texture_mvadapter/
+        ├── pair_decisions.json            # Generated decisions; pairs.csv remains input-only
         └── <target>_to_<source>/
-            ├── alignment/          # Rendered and enhanced views
             └── <bald_version>/
+                ├── alignment/              # Version-scoped rendered/enhanced views
                 └── 3d_aware/
-                    ├── warping/
                     ├── blending/
-                    └── transferred_klein/
-                        └── hair_restored.png
+                    ├── enhanced/transferred_klein/hair_restored.png
+                    └── blended/transferred_klein/hair_restored.png
 ```
 
 ---
@@ -312,6 +338,14 @@ Configuration covers:
 - Models: Hugging Face IDs, LoRA weights, checkpoints
 - Per-stage parameters: resolution, inference steps, thresholds
 - Prompts used across the pipeline
+- `landmark_3d.num_perturbations: 0`: the supported inference contract is single frontal view
+- `transfer_hair.conditioning_sources: [enhanced, blended]`: generated final variants
+- `cache.policy: validated`: artifacts are reused only when their provenance sidecar matches
+
+Generated artifacts carry `.provenance.json` sidecars recording resolved configuration, inputs, model identifiers/revisions, and seeds. Existing artifacts without matching provenance are regenerated. Validated cache reuse is disabled while the repository checkout has uncommitted changes, since such a state cannot name the producing code exactly.
+For publication runs, set the `models.*_revision` values to immutable Hugging Face snapshot commits; preflight warns when a selected stage uses an unpinned revision. These fields cover FLUX, RealVis/SDXL, ControlNet, MV-Adapter, SAM, BEN2, face parsing, Qwen, and Bald Converter dependencies used by the supported pipeline.
+Per-item seeds make sampled decisions reproducible; exact pixel equality additionally depends on deterministic GPU kernels and is recorded in provenance through the active Torch/cuDNN determinism flags.
+Stage 3 invokes the pinned external MV-Adapter checkout; for reported runs, set `shape_mesh.sdxl_model_id` to an immutable local Hugging Face snapshot path so its internal loader cannot resolve a moving repository head.
 
 Override defaults with a custom YAML file:
 

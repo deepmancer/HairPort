@@ -25,8 +25,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
-import torch
 from hairport.config import get_config
+from hairport.runtime import StageSummary
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ class PipelineContext:
     def __post_init__(self):
         cfg = get_config()
         if self.data_dir is None:
-            self.data_dir = Path("outputs")
+            self.data_dir = Path(cfg.paths.output_dir)
         if self.shape_provider is None:
             self.shape_provider = cfg.pipeline.shape_provider
         if self.texture_provider is None:
@@ -139,14 +139,16 @@ class PipelineContext:
         if stage_name == "baldify":
             base["data_dir"] = self.data_dir
             base["bald_version"] = self.bald_version
+            base["seed"] = self.seed
             return {**base, **self.extra.get(stage_name, {})}
 
         # All other stages use data_dir
         base["data_dir"] = self.data_dir
 
-        # caption needs bald_version mapped to bald_subdir
+        # caption uses bald_version so it can expand "all" into both bald dirs
         if stage_name == "caption":
-            base["bald_subdir"] = f"bald/{self.bald_version}"
+            base["bald_version"] = self.bald_version
+            base["seed"] = self.seed
             base.update(self.extra.get(stage_name, {}))
             return base
 
@@ -157,10 +159,17 @@ class PipelineContext:
             base["shape_provider"] = self.shape_provider
             base["texture_provider"] = self.texture_provider
 
+        if stage_name == "landmark_3d":
+            base["device"] = self.device
+
         # Stages that need bald_version
         if stage_name in ("align_view", "render_view", "enhance_view",
                           "blend_hair", "transfer_hair"):
             base["bald_version"] = self.bald_version
+
+        if stage_name in ("align_view", "render_view", "enhance_view",
+                          "blend_hair", "transfer_hair"):
+            base["seed"] = self.seed
 
         # Merge stage-specific overrides from extra
         base.update(self.extra.get(stage_name, {}))
@@ -212,6 +221,7 @@ class HairPortPipeline:
         device: str | None = None,
         seed: int | None = None,
         extra: Dict[str, Dict[str, Any]] | None = None,
+        preflight: bool = True,
     ):
         if isinstance(data_dir, PipelineContext):
             self.ctx = data_dir
@@ -227,6 +237,7 @@ class HairPortPipeline:
             )
         self._results: list[StageResult] = []
         self._hooks: list[Callable[[StageResult], None]] = []
+        self.preflight = preflight
 
     def add_hook(self, fn: Callable[[StageResult], None]) -> None:
         """Register a callback invoked after each stage completes."""
@@ -266,6 +277,10 @@ class HairPortPipeline:
             Results for each executed stage.
         """
         stages = self._resolve_stages(start=start, end=end, only=only, skip=skip)
+        if self.preflight:
+            from hairport.preflight import validate_preflight
+
+            validate_preflight(stages)
         self._results = []
 
         logger.info(f"Pipeline: running stages {[s for s in stages]}")
@@ -277,12 +292,24 @@ class HairPortPipeline:
             stage_instance = None
             try:
                 cls = _get_stage_class(stage_name)
-                stage_instance = cls()
+                stage_instance = cls(**self._stage_init_kwargs(stage_name))
                 kwargs = self.ctx.stage_kwargs(stage_name)
                 result = stage_instance.run(**kwargs)
+                if not isinstance(result, StageSummary):
+                    raise TypeError(
+                        f"Stage {stage_name} returned {type(result).__name__}; "
+                        "top-level stages must return StageSummary."
+                    )
+                error = None
+                if result.failures:
+                    error = "; ".join(
+                        f"{failure.item_id}: {failure.error}"
+                        for failure in result.failures[:3]
+                    )
                 sr = StageResult(
-                    stage=stage_name, success=True,
+                    stage=stage_name, success=result.success,
                     duration_seconds=time.time() - t0, result=result,
+                    error=error,
                 )
             except Exception as e:
                 logger.error(f"Stage {stage_name} failed: {e}", exc_info=True)
@@ -290,6 +317,12 @@ class HairPortPipeline:
                     stage=stage_name, success=False,
                     duration_seconds=time.time() - t0, error=str(e),
                 )
+            finally:
+                if stage_instance is not None and hasattr(stage_instance, "unload"):
+                    try:
+                        stage_instance.unload()
+                    except Exception:
+                        logger.warning(f"Stage unload error after {stage_name}", exc_info=True)
 
             self._results.append(sr)
             for hook in self._hooks:
@@ -302,10 +335,6 @@ class HairPortPipeline:
                 logger.error(f"Pipeline stopped at {stage_name} (stop_on_error=True)")
                 break
 
-            # Try to release GPU after each stage
-            if stage_instance is not None and hasattr(stage_instance, "unload"):
-                stage_instance.unload()
-
         total = time.time() - pipeline_start
         logger.info(f"Pipeline finished in {total:.1f}s — "
                      f"{sum(1 for r in self._results if r.success)}/{len(self._results)} succeeded")
@@ -315,6 +344,21 @@ class HairPortPipeline:
     # Internals
     # ------------------------------------------------------------------
 
+    def _stage_init_kwargs(self, stage_name: str) -> dict:
+        if stage_name == "baldify":
+            return {"device": self.ctx.device}
+        if stage_name == "caption":
+            return {"device": self.ctx.device}
+        if stage_name == "shape_mesh":
+            return {"device": self.ctx.device, "seed": self.ctx.seed}
+        if stage_name == "render_view":
+            return {"device": self.ctx.device, "seed": self.ctx.seed}
+        if stage_name == "enhance_view":
+            return {"device": self.ctx.device, "seed": self.ctx.seed}
+        if stage_name == "transfer_hair":
+            return {"device": self.ctx.device, "seed": self.ctx.seed}
+        return {}
+
     @staticmethod
     def _resolve_stages(
         start: str | None = None,
@@ -323,7 +367,19 @@ class HairPortPipeline:
         skip: Sequence[str] | None = None,
     ) -> list[str]:
         """Resolve which stages to run and in what order."""
+        valid_stages = set(STAGE_ORDER)
+        unknown_skip = sorted(set(skip or ()) - valid_stages)
+        if unknown_skip:
+            raise ValueError(
+                f"Unknown stage(s) in skip: {unknown_skip}. Valid stages: {STAGE_ORDER}"
+            )
+
         if only:
+            unknown_only = sorted(set(only) - valid_stages)
+            if unknown_only:
+                raise ValueError(
+                    f"Unknown stage(s) in only: {unknown_only}. Valid stages: {STAGE_ORDER}"
+                )
             # Maintain pipeline ordering
             stages = [s for s in STAGE_ORDER if s in only]
             if not stages:
@@ -331,18 +387,25 @@ class HairPortPipeline:
             return stages
 
         stages = list(STAGE_ORDER)
+        start_idx = 0
+        end_idx = len(STAGE_ORDER) - 1
 
         if start:
             if start not in STAGE_ORDER:
                 raise ValueError(f"Unknown start stage: {start!r}")
-            idx = STAGE_ORDER.index(start)
-            stages = stages[idx:]
+            start_idx = STAGE_ORDER.index(start)
 
         if end:
             if end not in STAGE_ORDER:
                 raise ValueError(f"Unknown end stage: {end!r}")
-            idx = stages.index(end)
-            stages = stages[: idx + 1]
+            end_idx = STAGE_ORDER.index(end)
+
+        if end_idx < start_idx:
+            raise ValueError(
+                f"Invalid stage range: end stage {end!r} occurs before start stage {start!r}."
+            )
+
+        stages = STAGE_ORDER[start_idx: end_idx + 1]
 
         if skip:
             stages = [s for s in stages if s not in skip]
@@ -363,14 +426,14 @@ def main(argv: list[str] | None = None):
         prog="hairport",
         description="Run the HairPort hair transfer pipeline.",
     )
-    parser.add_argument("--data_dir", type=str, default="outputs")
-    parser.add_argument("--shape_provider", type=str, default="hi3dgen",
+    parser.add_argument("--data_dir", type=str, default=None)
+    parser.add_argument("--shape_provider", type=str, default=None,
                         choices=["hunyuan", "hi3dgen", "direct3d_s2"])
-    parser.add_argument("--texture_provider", type=str, default="mvadapter",
+    parser.add_argument("--texture_provider", type=str, default=None,
                         choices=["hunyuan", "mvadapter"])
-    parser.add_argument("--bald_version", type=str, default="wo_seg",
+    parser.add_argument("--bald_version", type=str, default=None,
                         choices=["wo_seg", "w_seg", "all"])
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--start", type=str, default=None,
                         help="First stage to execute")
@@ -382,6 +445,8 @@ def main(argv: list[str] | None = None):
                         help="Skip these stages")
     parser.add_argument("--no-stop-on-error", action="store_true",
                         help="Continue on stage failure")
+    parser.add_argument("--no-preflight", action="store_true",
+                        help="Skip dependency/asset preflight checks")
     add_config_args(parser)
     args = parser.parse_args(argv)
     load_config_from_args(args)
@@ -395,6 +460,7 @@ def main(argv: list[str] | None = None):
         bald_version=args.bald_version,
         device=args.device,
         seed=args.seed,
+        preflight=not args.no_preflight,
     )
     results = pipeline.run(
         start=args.start,

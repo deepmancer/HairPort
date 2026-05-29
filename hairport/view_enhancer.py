@@ -29,6 +29,7 @@ from diffusers import Flux2KleinPipeline
 
 from hairport.core.bg_remover import BackgroundRemover
 from hairport.config import get_config
+from hairport.runtime import can_reuse_artifact, write_provenance
 
 # ============================================================================
 # Configuration — reads from centralized config at call time
@@ -370,6 +371,7 @@ class ViewEnhancer:
         """Load the FLUX.2 Klein pipeline and background remover."""
         self.pipe = Flux2KleinPipeline.from_pretrained(
             self.model_id,
+            revision=get_config().models.flux_klein_revision,
             torch_dtype=self.dtype,
         )
         self.pipe.to(self.device)
@@ -687,6 +689,10 @@ def process_view_aligned_folder(
     bald_version: str = "w_seg",
     seed: int = -1,
     enhancer: Optional[ViewEnhancer] = None,
+    num_inference_steps: int | None = None,
+    guidance_scale: float | None = None,
+    conditioning_phase: int | None = None,
+    provenance: Optional[dict] = None,
 ) -> bool:
     """
     Process a single view-aligned folder to enhance the generated image.
@@ -702,13 +708,21 @@ def process_view_aligned_folder(
         True if successful, False otherwise
     """
     # Define paths
-    input_image_path = folder_path / "alignment" / "target_image.png"
-    phase1_output_path = folder_path / "alignment" / "target_image_phase_1.png"
-    final_output_path = folder_path / "alignment" / "target_image_phase_2.png"
+    alignment_dir = folder_path / bald_version / "alignment"
+    input_image_path = alignment_dir / "target_image.png"
+    phase1_output_path = alignment_dir / "target_image_phase_1.png"
+    final_output_path = alignment_dir / "target_image_phase_2.png"
+    if conditioning_phase is None:
+        conditioning_phase = int(get_config().enhance_view.conditioning_phase)
+    if conditioning_phase not in (1, 2):
+        raise ValueError(f"conditioning_phase must be 1 or 2, got {conditioning_phase!r}")
+    cache_output_path = phase1_output_path if conditioning_phase == 1 else final_output_path
     folder_name = folder_path.name
     
     # Check if input exists
     if not input_image_path.exists():
+        raise FileNotFoundError(f"Rendered alignment image not found: {input_image_path}")
+    if provenance is not None and can_reuse_artifact(cache_output_path, provenance):
         return False
     
     # Skip if already processed (check final output)
@@ -719,7 +733,7 @@ def process_view_aligned_folder(
     # Format: {target_id}_to_{source_id}
     parts = folder_name.split("_to_")
     if len(parts) != 2:
-        return False
+        raise ValueError(f"Invalid view-aligned folder name: {folder_name}")
     
     target_id, source_id = parts
     
@@ -728,12 +742,18 @@ def process_view_aligned_folder(
     if dataset_name == "celeba_reduced":
         image_folder = "image_outpainted"
     else:
-        image_folder = "hair_aligned_image"
+        image_folder = "image"
     
     reference_image_path = data_dir / image_folder / f"{target_id}.png"
+    if not reference_image_path.exists() and image_folder != "image":
+        reference_image_path = data_dir / "image" / f"{target_id}.png"
+    if not reference_image_path.exists():
+        legacy_reference_path = data_dir / "hair_aligned_image" / f"{target_id}.png"
+        if legacy_reference_path.exists():
+            reference_image_path = legacy_reference_path
     
     if not reference_image_path.exists():
-        return False
+        raise FileNotFoundError(f"Reference image not found for enhancement: {reference_image_path}")
     
     print(f"Input: {input_image_path}")
     print(f"Reference: {reference_image_path}")
@@ -750,10 +770,12 @@ def process_view_aligned_folder(
             generated_image=str(input_image_path),
             reference_image=str(reference_image_path),
             seed=seed,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
         )
         
         # Save raw Phase 1 output (before inverse transformation)
-        raw_output_path = folder_path / "alignment" / "target_image_phase_1_raw.png"
+        raw_output_path = alignment_dir / "target_image_phase_1_raw.png"
         raw_output_path.parent.mkdir(parents=True, exist_ok=True)
         if phase1_image.mode != "RGB":
             phase1_image_rgb = phase1_image.convert("RGB")
@@ -776,6 +798,9 @@ def process_view_aligned_folder(
         if phase2_uncropped.mode != "RGB":
             phase2_uncropped = phase2_uncropped.convert("RGB")
         phase2_uncropped.save(final_output_path)
+        if provenance is not None:
+            write_provenance(phase1_output_path, provenance)
+            write_provenance(final_output_path, provenance)
         print(f"Phase 2 output: {final_output_path}")
         
         if should_unload:
@@ -784,8 +809,7 @@ def process_view_aligned_folder(
         return True
         
     except Exception as e:
-        print(f"Error: {folder_name}: {e}")
-        return False
+        raise RuntimeError(f"EnhanceView failed for {folder_name}: {e}") from e
 
 
 def enhance_view_ig2mv(
@@ -934,15 +958,8 @@ if __name__ == "__main__":
                 #     skipped_count += 1
                 #     continue
                 
-                # Check if already processed
-                output_path = folder / "alignment" / "target_image_phase_1.png"
-                if output_path.exists():
-                    print(f"\n[{i}/{len(all_folders)}] {output_path} - already processed, skipping")
-                    skipped_count += 1
-                    continue
-                
                 # Check if input exists
-                input_path = folder / "alignment" / "target_image.png"
+                input_path = folder / bald_version / "alignment" / "target_image.png"
                 if not input_path.exists():
                     print(f"\n[{i}/{len(all_folders)}] {input_path} - input not found, skipping")
                     skipped_count += 1

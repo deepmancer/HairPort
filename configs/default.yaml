@@ -56,6 +56,22 @@ models:
   lora_detail_xl: add-detail-xl.safetensors
   # Background removal session
   rembg_session: birefnet-general
+  # Set these to immutable Hugging Face snapshot commits for released experiments.
+  flux_klein_revision: null
+  flux_kontext_revision: null
+  realvis_v4_revision: null
+  realvis_v5_lightning_revision: null
+  sdxl_vae_revision: null
+  controlnet_union_revision: null
+  mv_adapter_revision: null
+  sam_revision: null
+  sam_bald_konverter_revision: null
+  ben2_revision: null
+  face_parser_revision: null
+  captioner_revision: null
+  qwen_image_edit_revision: null
+  qwen_lightning_lora_revision: null
+  bald_konverter_revision: null
 
 # ---- SAM (Segment Anything) ----
 sam:
@@ -112,20 +128,35 @@ caption:
   width: 1024
 
 shape_mesh:
-  target_faces: 150000
-  quality_threshold: 0.8
-  extra_tex_coord_weight: 4.0
-  min_size_mb: 20.0
-  frontalize_min_size_mb: 25.0
+  input_mesh_dir: shape_mesh
+  input_mesh_filename: shape_mesh.glb
+  input_image_dir: matted_image_centered
+  prompt_subdir: prompt
+  output_mesh_filename: textured_mesh.glb
+  variant: sdxl
+  sdxl_model_id: SG161222/RealVisXL_V4.0
+  reference_conditioning_scale: 1.0
+  align_input_mesh: false
+  align_output_mesh: true
+  preprocess_mesh: true
+  remove_bg: false
+  default_prompt_text: >-
+    high quality photo, photograph of a person, ultra-detailed, strand-level
+    hair, 8k, realistic hair texture
 
 landmark_3d:
   ortho_scale: 1.1
-  num_perturbations: 4
+  textured_mesh_ortho_scale: 0.5
+  # Official inference is single frontal-view only. Multi-view fusion is not validated.
+  num_perturbations: 0
   angle_range: 0.15
   trans_range: 0.05
   resolution: 1024
   optimize: true
   super_resolution: true
+  textured_mesh_filename: textured_mesh.glb
+  postprocessed_mesh_filename: postprocessed_textured_mesh.glb
+  target_landmark_extent: 0.4
   codeformer_fidelity: 0.0
   codeformer_upscale: 2
   default_cam_location: [0.0, -1.45, 0.0]
@@ -161,21 +192,15 @@ enhance_view:
   max_image_size: 1024
   bg_color: [255, 255, 255]
   padding_ratio: 0.05
+  # Downstream enhanced-view conditioning artifact. Use 1 for legacy runs.
+  conditioning_phase: 2
 
 blend_hair:
   resolution: 1024
   optimization_resolution: 1024
-  codeformer_upscale: 2
-  codeformer_fidelity: 0.5
   alignment_iou_weight: 1.0
   alignment_landmark_weight: 1.0
   sam_confidence_threshold: 0.4
-  poisson_blend_strength: 0.5
-  dilation_size: 15
-  blur_size: 2
-  gaussian_sigma: 21
-  feather_px: 12
-  mask_threshold: 0.5
 
 transfer_hair:
   guidance_scale: 1.0
@@ -188,6 +213,11 @@ transfer_hair:
   uncrop_hair_threshold: 0.75
   uncrop_border_threshold: 0.025
   uncrop_resize_percentage: 80.0
+  conditioning_sources: [enhanced, blended]
+
+# ---- Generated-artifact reuse policy ----
+cache:
+  policy: validated
 
 # ---- Uncrop (SDXL-based outpainting) ----
 uncrop:

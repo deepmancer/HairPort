@@ -1,6 +1,8 @@
-"""Stage 4 — Landmark 3D: Estimate 3D facial landmarks via multi-view fusion.
+"""Stage 4 — Landmark 3D: postprocess textured meshes and fit landmarks.
 
-Delegates to ``fit_lmk.run_standalone.estimate_3d_landmarks_standalone``.
+Delegates to ``hairport.postprocess.fit_3d_landmarks`` so the exported
+``postprocessed_textured_mesh.glb`` is the normalized MVAdapter/Hunyuan
+textured mesh used by downstream 3D-aware inference.
 
 Usage::
 
@@ -9,8 +11,8 @@ Usage::
     stage = Landmark3DStage()
     stage.run(data_dir="outputs", shape_provider="hi3dgen", texture_provider="mvadapter")
 
-    # Programmatic — single mesh
-    stage.run(mesh_path="output/mesh.glb", output_dir="output/lmk_3d")
+    # Programmatic — single textured mesh
+    stage.run(mesh_path="output/textured_mesh.glb", output_dir="output/lmk_3d")
 
     # CLI
     python -m hairport.stages.landmark_3d --data_dir outputs --shape_provider hi3dgen
@@ -24,16 +26,13 @@ from pathlib import Path
 from typing import Optional
 
 from hairport.config import get_config, add_config_args, load_config_from_args
+from hairport.runtime import StageSummary, build_provenance, can_reuse_artifact, write_provenance
 
 logger = logging.getLogger(__name__)
 
 
 class Landmark3DStage:
-    """Estimate 3D facial landmarks from head meshes.
-
-    Uses multi-view Blender renders + MediaPipe + multi-view fusion
-    with optional CodeFormer super-resolution.
-    """
+    """Fit 3D landmarks and export postprocessed textured meshes."""
 
     def run(
         self,
@@ -54,37 +53,43 @@ class Landmark3DStage:
         debug: bool = False,
         debug_dir: str = "./debug_outputs",
         super_resolution: bool | None = None,
-    ) -> dict:
+        frontalize: bool = False,
+        target_rotation_euler_rad: list[float] | None = None,
+    ) -> StageSummary:
         """Run 3D landmark estimation.
 
         Supports two invocation modes:
 
         1. **data_dir** (pipeline/batch mode): iterates over all identity
-           meshes under ``<data_dir>/<texture_provider>/<shape_provider>/``
-           and writes landmarks to ``<data_dir>/lmk_3d/<provider_subdir>/<id>/``.
-        2. **mesh_path / output_dir** (single mesh mode).
+           textured meshes under ``<data_dir>/<texture_provider>/<shape_provider>/``
+           and writes postprocessed meshes/landmarks to
+           ``<data_dir>/lmk_3d/<provider_subdir>/<id>/``.
+        2. **mesh_path / output_dir** (single textured mesh mode).
 
         Returns
         -------
-        dict
-            In single-mesh mode: ``landmarks_3d``, ``vertex_indices``, etc.
-            In batch mode: ``{"processed": N, "skipped": N, "failed": N}``.
+        StageSummary
+            Summary with generated landmark artifacts and per-identity failures.
         """
-        if cam_loc is None:
-            cam_loc = list(get_config().landmark_3d.default_cam_location)
-        if cam_rot is None:
-            cam_rot = list(get_config().landmark_3d.default_cam_rotation)
-
         cfg = get_config()
         _lmk = cfg.landmark_3d
         if shape_provider is None:
             shape_provider = cfg.pipeline.shape_provider
         if texture_provider is None:
             texture_provider = cfg.pipeline.texture_provider
+        if cam_loc is None:
+            cam_loc = list(_lmk.default_cam_location)
+        if cam_rot is None:
+            cam_rot = list(_lmk.default_cam_rotation)
         if ortho_scale is None:
-            ortho_scale = _lmk.ortho_scale
+            ortho_scale = _lmk.textured_mesh_ortho_scale
         if num_perturbations is None:
             num_perturbations = _lmk.num_perturbations
+        if num_perturbations != 0:
+            raise ValueError(
+                "Landmark3D supports only single frontal-view inference; "
+                "num_perturbations must be 0."
+            )
         if angle_range is None:
             angle_range = _lmk.angle_range
         if trans_range is None:
@@ -97,12 +102,16 @@ class Landmark3DStage:
             device = cfg.device
         if super_resolution is None:
             super_resolution = _lmk.super_resolution
+        from hairport.fit_lmk.ray_intersector import RayMeshIntersector
+        ray_backend = RayMeshIntersector.preflight_backend()
+        logger.info("Landmark3D ray backend: %s", ray_backend)
 
         # Single-mesh mode
         if mesh_path is not None:
-            return self._run_single(
+            result = self._run_single(
                 mesh_path=mesh_path,
                 output_dir=output_dir or "./output_landmarks",
+                target_rotation_euler_rad=target_rotation_euler_rad or [0.0, 0.0, 0.0],
                 cam_loc=cam_loc, cam_rot=cam_rot,
                 ortho_scale=ortho_scale,
                 num_perturbations=num_perturbations,
@@ -110,7 +119,17 @@ class Landmark3DStage:
                 resolution=resolution, optimize=optimize,
                 device=device, debug=debug, debug_dir=debug_dir,
                 super_resolution=super_resolution,
+                frontalize=frontalize,
+                force_recompute=True,
             )
+            summary = StageSummary(
+                attempted=1, completed=1,
+                metadata={"result": result, "ray_backend": ray_backend},
+            )
+            summary.add_artifacts(
+                [result[key] for key in ("landmarks_3d", "vertex_indices", "postprocessed_mesh")]
+            )
+            return summary
 
         # Batch mode — iterate over all identity meshes
         if data_dir is None:
@@ -119,37 +138,62 @@ class Landmark3DStage:
         data_dir = Path(data_dir)
         provider_subdir = f"shape_{shape_provider}__texture_{texture_provider}"
 
-        # Locate mesh directories
+        # Locate textured mesh directories
         if texture_provider == "hunyuan":
             mesh_root = data_dir / "hunyuan"
         else:
             mesh_root = data_dir / texture_provider / shape_provider
 
         if not mesh_root.exists():
-            raise FileNotFoundError(f"Mesh root directory not found: {mesh_root}")
+            raise FileNotFoundError(f"Textured mesh root directory not found: {mesh_root}")
 
         lmk_out_root = data_dir / "lmk_3d" / provider_subdir
 
         identity_dirs = sorted(
             d for d in mesh_root.iterdir()
-            if d.is_dir() and (d / "shape_mesh.glb").exists()
+            if d.is_dir() and (d / _lmk.textured_mesh_filename).exists()
         )
+        if not identity_dirs:
+            expected_input = (
+                data_dir
+                / cfg.shape_mesh.input_mesh_dir
+                / "<id>"
+                / cfg.shape_mesh.input_mesh_filename
+            )
+            raise FileNotFoundError(
+                f"No {_lmk.textured_mesh_filename} files were found in {mesh_root}. "
+                "Landmark3D requires textured meshes generated by ShapeMesh/MVAdapter and "
+                f"does not fall back to shape meshes. Expected ShapeMesh inputs at {expected_input} "
+                f"and outputs at {mesh_root}/<id>/{_lmk.textured_mesh_filename}."
+            )
         logger.info(f"Landmark3D batch: {len(identity_dirs)} identities in {mesh_root}")
 
-        stats = {"processed": 0, "skipped": 0, "failed": 0}
+        summary = StageSummary(metadata={"ray_backend": ray_backend, "landmark_mode": "single_frontal"})
         for id_dir in identity_dirs:
+            summary.attempted += 1
             identity_id = id_dir.name
-            mesh_file = id_dir / "shape_mesh.glb"
+            mesh_file = id_dir / _lmk.textured_mesh_filename
             out = lmk_out_root / identity_id
-            marker = out / "landmarks_3d.npy"
+            expected_outputs = [
+                out / "landmarks_3d.npy",
+                out / "vertex_indices.npy",
+                out / _lmk.postprocessed_mesh_filename,
+            ]
 
-            if marker.exists():
-                stats["skipped"] += 1
+            provenance = build_provenance(
+                "landmark_3d", seed=cfg.seed,
+                inputs=[mesh_file, data_dir / "image" / f"{identity_id}.png"],
+                metadata={"identity_id": identity_id, "num_perturbations": 0},
+            )
+            if all(can_reuse_artifact(path, provenance) for path in expected_outputs):
+                summary.skipped += 1
                 continue
 
             try:
+                euler_rad = self._load_head_orientation(data_dir, identity_id)
                 self._run_single(
                     mesh_path=mesh_file, output_dir=out,
+                    target_rotation_euler_rad=euler_rad,
                     cam_loc=cam_loc, cam_rot=cam_rot,
                     ortho_scale=ortho_scale,
                     num_perturbations=num_perturbations,
@@ -157,36 +201,63 @@ class Landmark3DStage:
                     resolution=resolution, optimize=optimize,
                     device=device, debug=debug, debug_dir=debug_dir,
                     super_resolution=super_resolution,
+                    frontalize=frontalize,
+                    force_recompute=True,
                 )
-                stats["processed"] += 1
+                for path in expected_outputs:
+                    write_provenance(path, provenance)
+                summary.completed += 1
+                summary.add_artifacts(expected_outputs)
             except Exception as e:
                 logger.error(f"Landmark3D failed for {identity_id}: {e}")
-                stats["failed"] += 1
+                summary.add_failure(identity_id, e)
 
-        logger.info(f"Landmark3D batch complete: {stats}")
-        return stats
+        logger.info(f"Landmark3D batch complete: {summary.to_dict()}")
+        return summary
 
     @staticmethod
     def _run_single(
-        mesh_path, output_dir, cam_loc, cam_rot, ortho_scale,
+        mesh_path, output_dir, target_rotation_euler_rad, cam_loc, cam_rot, ortho_scale,
         num_perturbations, angle_range, trans_range, resolution,
-        optimize, device, debug, debug_dir, super_resolution,
+        optimize, device, debug, debug_dir, super_resolution, frontalize, force_recompute,
     ) -> dict:
-        from hairport.fit_lmk.run_standalone import estimate_3d_landmarks_standalone
+        from hairport.postprocess import fit_3d_landmarks
 
-        result = estimate_3d_landmarks_standalone(
-            mesh_path=str(mesh_path),
-            cam_loc=cam_loc, cam_rot=cam_rot,
-            ortho_scale=ortho_scale,
-            output_dir=str(output_dir),
+        result = fit_3d_landmarks(
+            lmk_3d_output_dir=str(output_dir),
+            target_textured_mesh_path=str(mesh_path),
+            target_rotation_euler_rad=target_rotation_euler_rad,
+            camera_location=cam_loc,
+            camera_rotation=cam_rot,
+            camera_ortho_scale=ortho_scale,
             num_perturbations=num_perturbations,
             angle_range=angle_range, trans_range=trans_range,
             resolution=resolution,
-            optimize=optimize, device=device,
+            optimize=optimize,
+            device=device,
             debug=debug, debug_dir=debug_dir,
             super_resolution=super_resolution,
+            frontalize=frontalize,
+            force_recompute=force_recompute,
         )
         return result
+
+    @staticmethod
+    def _load_head_orientation(data_dir: Path, identity_id: str) -> list[float]:
+        from hairport.core.flame_fitting import compute_head_orientation
+
+        image_path = data_dir / "image" / f"{identity_id}.png"
+        if not image_path.exists():
+            raise FileNotFoundError(
+                f"Source image required for head orientation was not found: {image_path}"
+            )
+
+        head_orientation = compute_head_orientation(
+            image_path=image_path,
+            cache_dir=data_dir / "head_orientation" / identity_id,
+            force=False,
+        )
+        return head_orientation.get("euler_angles_xyz_radians", [[0.0, 0.0, 0.0]])[0]
 
 
 def main(argv: list[str] | None = None):
@@ -214,6 +285,7 @@ def main(argv: list[str] | None = None):
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--debug_dir", type=str, default="./debug_outputs")
     parser.add_argument("--no_super_resolution", action="store_true")
+    parser.add_argument("--frontalize", action="store_true")
     add_config_args(parser)
     args = parser.parse_args(argv)
     load_config_from_args(args)
@@ -237,6 +309,7 @@ def main(argv: list[str] | None = None):
         device=args.device,
         debug=args.debug, debug_dir=args.debug_dir,
         super_resolution=False if args.no_super_resolution else None,
+        frontalize=args.frontalize,
     )
     print(f"Landmark3D: {result}")
 

@@ -31,17 +31,22 @@ class FaceParser:
 
     def __init__(
         self,
-        model_id: str = "jonathandinu/face-parsing",
+        model_id: str | None = None,
         device: str | torch.device = "cuda",
+        revision: str | None = None,
     ):
+        from hairport.config import get_config
         from transformers import (
             SegformerForSemanticSegmentation,
             SegformerImageProcessor,
         )
 
+        cfg = get_config()
+        model_id = model_id or cfg.models.face_parser
+        revision = revision if revision is not None else cfg.models.face_parser_revision
         self.device = torch.device(device)
-        self._processor = SegformerImageProcessor.from_pretrained(model_id)
-        self._model = SegformerForSemanticSegmentation.from_pretrained(model_id)
+        self._processor = SegformerImageProcessor.from_pretrained(model_id, revision=revision)
+        self._model = SegformerForSemanticSegmentation.from_pretrained(model_id, revision=revision)
         self._model.to(self.device).eval()
         logger.info("FaceParser (Segformer) loaded on %s", self.device)
 

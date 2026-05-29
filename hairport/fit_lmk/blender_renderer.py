@@ -153,6 +153,7 @@ def setup_scene(resolution=1024, max_gpus=None):
 
 
 def load_mesh(mesh_path):
+    from hairport.fit_lmk.transforms import GLB_IMPORT_ROTATION_X_DEG, OBJ_IMPORT_ROTATION_Y_DEG
     mesh_path = Path(mesh_path)
     if not mesh_path.exists():
         raise FileNotFoundError(f"Mesh not found: {mesh_path}")
@@ -173,13 +174,13 @@ def load_mesh(mesh_path):
         raise RuntimeError(f"No mesh imported from {mesh_path}")
     
     if mesh_ext in {'.glb', '.gltf'}:
-        rotation_matrix = Matrix.Rotation(math.radians(90.0), 4, 'X')
+        rotation_matrix = Matrix.Rotation(math.radians(GLB_IMPORT_ROTATION_X_DEG), 4, 'X')
         for obj in imported_meshes:
             obj.matrix_world = rotation_matrix @ obj.matrix_world
         bpy.context.view_layer.update()
     
     if mesh_ext in [".obj", ".ply"]:
-        rotation_matrix = Matrix.Rotation(math.radians(180.0), 4, 'Y')
+        rotation_matrix = Matrix.Rotation(math.radians(OBJ_IMPORT_ROTATION_Y_DEG), 4, 'Y')
         for obj in imported_meshes:
             obj.matrix_world = rotation_matrix @ obj.matrix_world
         bpy.context.view_layer.update()

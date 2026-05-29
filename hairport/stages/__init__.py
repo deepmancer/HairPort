@@ -9,10 +9,10 @@ Stages
 ------
 1. baldify       — Generate bald version of portrait images
 2. caption       — Generate text captions / outpainting for bald images
-3. shape_mesh    — Simplify + frontalize 3D meshes
-4. landmark_3d   — Estimate 3D facial landmarks via multi-view fusion
+3. shape_mesh    — Texture canonical shape meshes via MVAdapter
+4. landmark_3d   — Estimate 3D facial landmarks from the supported frontal view
 5. align_view    — Align target hairstyle to source view
-6. render_view   — Generate textured multi-views (MV-Adapter)
+6. render_view   — Render target-hair alignment views
 7. enhance_view  — Enhance rendered views (FLUX.2 Klein + CodeFormer)
 8. blend_hair    — Warp + blend hair onto bald heads (Poisson)
 9. transfer_hair — Final hair transfer (FLUX.2 Klein 9B)

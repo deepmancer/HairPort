@@ -20,7 +20,16 @@ import argparse
 import logging
 from pathlib import Path
 
+import torch
+
 from hairport.config import get_config, add_config_args, load_config_from_args
+from hairport.runtime import (
+    StageSummary,
+    build_provenance,
+    can_reuse_artifact,
+    derive_seed,
+    write_provenance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,15 +60,31 @@ class BaldifyStage:
     ):
         cfg = get_config()
         self.mode = mode if mode is not None else cfg.baldify.mode
+        self._mode_explicit = mode is not None
         self.device = device if device is not None else cfg.device
+        if not torch.cuda.is_available() and "cuda" in str(self.device):
+            self.device = "cpu"
         self.use_flame = use_flame
         self.flame_dir = flame_dir
         self._pipeline = None
 
-    def _ensure_pipeline(self):
+    def _resolve_mode(self, bald_version: str) -> str:
+        if bald_version not in {"wo_seg", "w_seg"}:
+            raise ValueError(f"bald_version must be 'wo_seg' or 'w_seg', got {bald_version!r}")
+        if self._mode_explicit and self.mode not in {"auto", bald_version}:
+            raise ValueError(
+                f"Baldify mode {self.mode!r} does not match output bald_version "
+                f"{bald_version!r}. Use matching values to avoid mislabeled outputs."
+            )
+        return bald_version
+
+    def _ensure_pipeline(self, mode: str):
+        if self._pipeline is not None and self.mode != mode:
+            self.unload()
         if self._pipeline is None:
             from hairport.bald_konverter.pipeline import BaldKonverterPipeline
 
+            self.mode = mode
             self._pipeline = BaldKonverterPipeline(
                 mode=self.mode,
                 device=self.device,
@@ -79,7 +104,7 @@ class BaldifyStage:
         num_inference_steps: int | None = None,
         guidance_scale: float | None = None,
         strength: float | None = None,
-    ) -> dict:
+    ) -> StageSummary:
         """Run baldification.
 
         Supports three invocation modes:
@@ -91,8 +116,8 @@ class BaldifyStage:
 
         Returns
         -------
-        dict
-            Summary with ``processed``, ``skipped``, ``failed`` counts.
+        StageSummary
+            Uniform processing summary and per-image failures.
         """
         cfg = get_config()
         if bald_version is None:
@@ -106,18 +131,25 @@ class BaldifyStage:
         if strength is None:
             strength = cfg.baldify.strength
 
-        self._ensure_pipeline()
-
         # Single-image mode
         if input_path:
+            resolved_mode = self._resolve_mode(bald_version)
+            self._ensure_pipeline(resolved_mode)
             input_path = Path(input_path)
             if output_path is None:
                 output_path = input_path.with_name(f"{input_path.stem}_bald.png")
             output_path = Path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
+            summary = StageSummary(attempted=1)
+            item_seed = derive_seed(seed, "baldify", input_path.stem, bald_version, operation_name="wo_seg")
+            refine_seed = derive_seed(seed, "baldify", input_path.stem, bald_version, operation_name="w_seg")
+            provenance = build_provenance(
+                "baldify", seed=item_seed, inputs=[input_path],
+                metadata={"bald_version": bald_version, "refine_seed": refine_seed},
+            )
             try:
                 result = self._pipeline(
-                    image=input_path, seed=seed,
+                    image=input_path, seed=item_seed, refine_seed=refine_seed,
                     num_inference_steps=num_inference_steps,
                     guidance_scale=guidance_scale, strength=strength,
                 )
@@ -130,66 +162,92 @@ class BaldifyStage:
                     result.flux_input_w_seg.save(
                         output_path.parent / f"{input_path.stem}_flux_input_w_seg.png"
                     )
-                return {"processed": 1, "skipped": 0, "failed": 0}
+                write_provenance(output_path, provenance)
+                summary.completed = 1
+                summary.add_artifacts([output_path])
+                return summary
             except Exception as e:
                 logger.error(f"Failed: {e}")
-                return {"processed": 0, "skipped": 0, "failed": 1}
+                summary.add_failure(input_path.stem, e)
+                return summary
 
-        # Resolve input_dir / output_dir from data_dir when needed
+        # Resolve input_dir from data_dir when needed
         if data_dir is not None and input_dir is None:
             data_dir = Path(data_dir)
             input_dir = data_dir / "image"
-            output_dir = data_dir / "bald" / bald_version / "image"
-            flux_input_wo_seg_dir = data_dir / "bald" / "wo_seg" / "flux_input"
-            flux_input_w_seg_dir = data_dir / "bald" / "w_seg" / "flux_input"
+            data_dir_for_outputs = data_dir
         else:
-            flux_input_wo_seg_dir = None
-            flux_input_w_seg_dir = None
+            data_dir_for_outputs = None
 
         if not input_dir:
             raise ValueError("Provide data_dir, input_dir, or input_path")
 
         input_dir = Path(input_dir)
-        if output_dir is None:
-            output_dir = input_dir.parent / f"{input_dir.name}_bald"
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        if flux_input_wo_seg_dir is not None:
-            flux_input_wo_seg_dir.mkdir(parents=True, exist_ok=True)
-        if flux_input_w_seg_dir is not None:
-            flux_input_w_seg_dir.mkdir(parents=True, exist_ok=True)
-
         images = sorted(p for p in input_dir.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
         logger.info(f"Found {len(images)} images in {input_dir}")
 
-        stats = {"processed": 0, "skipped": 0, "failed": 0}
-        for img_path in images:
-            out_path = output_dir / f"{img_path.stem}.png"
-            if out_path.exists():
-                stats["skipped"] += 1
-                continue
-            try:
-                result = self._pipeline(
-                    image=img_path, seed=seed,
-                    num_inference_steps=num_inference_steps,
-                    guidance_scale=guidance_scale, strength=strength,
-                )
-                result.bald_image.save(out_path)
-                if flux_input_wo_seg_dir is not None and result.flux_input_wo_seg is not None:
-                    result.flux_input_wo_seg.save(
-                        flux_input_wo_seg_dir / f"{img_path.stem}.png"
-                    )
-                if flux_input_w_seg_dir is not None and result.flux_input_w_seg is not None:
-                    result.flux_input_w_seg.save(
-                        flux_input_w_seg_dir / f"{img_path.stem}.png"
-                    )
-                stats["processed"] += 1
-            except Exception as e:
-                logger.error(f"Failed to process {img_path.name}: {e}")
-                stats["failed"] += 1
+        summary = StageSummary()
+        bald_versions = ["w_seg", "wo_seg"] if bald_version == "all" else [bald_version]
 
-        logger.info(f"Baldify complete: {stats}")
-        return stats
+        for bv in bald_versions:
+            resolved_mode = self._resolve_mode(bv)
+            self._ensure_pipeline(resolved_mode)
+
+            if data_dir_for_outputs is not None:
+                version_output_dir = data_dir_for_outputs / "bald" / bv / "image"
+                flux_input_wo_seg_dir = data_dir_for_outputs / "bald" / "wo_seg" / "flux_input"
+                flux_input_w_seg_dir = data_dir_for_outputs / "bald" / "w_seg" / "flux_input"
+            else:
+                if output_dir is not None and len(bald_versions) > 1:
+                    raise ValueError("bald_version='all' requires data_dir or per-version output directories")
+                version_output_dir = Path(output_dir) if output_dir is not None else input_dir.parent / f"{input_dir.name}_bald"
+                flux_input_wo_seg_dir = None
+                flux_input_w_seg_dir = None
+
+            version_output_dir.mkdir(parents=True, exist_ok=True)
+            if flux_input_wo_seg_dir is not None:
+                flux_input_wo_seg_dir.mkdir(parents=True, exist_ok=True)
+            if flux_input_w_seg_dir is not None:
+                flux_input_w_seg_dir.mkdir(parents=True, exist_ok=True)
+
+            for img_path in images:
+                summary.attempted += 1
+                out_path = version_output_dir / f"{img_path.stem}.png"
+                item_id = f"{img_path.stem}:{bv}"
+                item_seed = derive_seed(seed, "baldify", img_path.stem, bv, operation_name="wo_seg")
+                refine_seed = derive_seed(seed, "baldify", img_path.stem, bv, operation_name="w_seg")
+                provenance = build_provenance(
+                    "baldify", seed=item_seed, inputs=[img_path],
+                    metadata={"bald_version": bv, "refine_seed": refine_seed},
+                )
+                if can_reuse_artifact(out_path, provenance):
+                    summary.skipped += 1
+                    continue
+                try:
+                    result = self._pipeline(
+                        image=img_path, seed=item_seed, refine_seed=refine_seed,
+                        num_inference_steps=num_inference_steps,
+                        guidance_scale=guidance_scale, strength=strength,
+                    )
+                    result.bald_image.save(out_path)
+                    if flux_input_wo_seg_dir is not None and result.flux_input_wo_seg is not None:
+                        result.flux_input_wo_seg.save(
+                            flux_input_wo_seg_dir / f"{img_path.stem}.png"
+                        )
+                    if flux_input_w_seg_dir is not None and result.flux_input_w_seg is not None:
+                        result.flux_input_w_seg.save(
+                            flux_input_w_seg_dir / f"{img_path.stem}.png"
+                        )
+                    write_provenance(out_path, provenance)
+                    summary.completed += 1
+                    summary.add_artifacts([out_path])
+                except Exception as e:
+                    logger.error(f"Failed to process {img_path.name} ({bv}): {e}")
+                    summary.add_failure(item_id, e)
+
+        summary.metadata["bald_versions"] = bald_versions
+        logger.info(f"Baldify complete: {summary.to_dict()}")
+        return summary
 
     def unload(self):
         """Release GPU resources."""
@@ -214,7 +272,7 @@ def main(argv: list[str] | None = None):
         choices=["wo_seg", "w_seg", "auto"],
     )
     parser.add_argument("--bald_version", type=str, default=None,
-                        choices=["wo_seg", "w_seg"])
+                        choices=["wo_seg", "w_seg", "all"])
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--steps", type=int, default=None)

@@ -63,9 +63,13 @@ class SAMMaskExtractor:
 
         from transformers import Sam31Processor, Sam31Model
 
-        self._model = Sam31Model.from_pretrained(self.model_id).to(self.device)
+        self._model = Sam31Model.from_pretrained(
+            self.model_id, revision=cfg.models.sam_revision
+        ).to(self.device)
         self._model.eval()
-        self._processor = Sam31Processor.from_pretrained(self.model_id)
+        self._processor = Sam31Processor.from_pretrained(
+            self.model_id, revision=cfg.models.sam_revision
+        )
         logger.info("SAMMaskExtractor (SAM 3.1) loaded on %s", self.device)
 
     # ------------------------------------------------------------------ #

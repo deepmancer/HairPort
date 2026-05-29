@@ -21,7 +21,6 @@ from PIL import Image
 from scipy.optimize import minimize
 
 # === Local / project-specific modules ===
-from data.preprocess.compute_mask import HairMaskPipeline
 from hairport.core import BackgroundRemover
 
 
@@ -1441,6 +1440,14 @@ def main(source_id: str, target_id: str, data_dir: str, visualize: bool = False,
     
     # === Extract Hair Masks ===
     print("\nExtracting hair masks...")
+    try:
+        from hairport.bald_konverter.preprocessing.hair_mask import HairMaskPipeline
+    except ImportError as exc:
+        raise ImportError(
+            "HairMaskPipeline is required only for this standalone warper utility path. "
+            "Install bald_konverter preprocessing dependencies or use the stage pipeline APIs."
+        ) from exc
+
     hair_mask_pipeline = HairMaskPipeline()
     
     aligned_mask_results = hair_mask_pipeline.preprocess(aligned_target_image)

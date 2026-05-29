@@ -67,6 +67,9 @@ class UncropperConfig:
     base_model: str | None = None
     vae_model: str | None = None
     controlnet_repo: str | None = None
+    base_model_revision: str | None = None
+    vae_model_revision: str | None = None
+    controlnet_revision: str | None = None
 
     def __post_init__(self):
         cfg = get_config()
@@ -103,6 +106,12 @@ class UncropperConfig:
             self.vae_model = cfg.models.sdxl_vae
         if self.controlnet_repo is None:
             self.controlnet_repo = cfg.models.controlnet_union
+        if self.base_model_revision is None:
+            self.base_model_revision = cfg.models.realvis_v5_lightning_revision
+        if self.vae_model_revision is None:
+            self.vae_model_revision = cfg.models.sdxl_vae_revision
+        if self.controlnet_revision is None:
+            self.controlnet_revision = cfg.models.controlnet_union_revision
 
 class Uncropper:
     def __init__(self, config: Optional[UncropperConfig] = None):
@@ -128,6 +137,7 @@ class Uncropper:
         config_file = hf_hub_download(
             self.config.controlnet_repo,
             filename="config_promax.json",
+            revision=self.config.controlnet_revision,
         )
         config = ControlNetModel_Union.load_config(config_file)
         controlnet = ControlNetModel_Union.from_config(config)
@@ -135,6 +145,7 @@ class Uncropper:
         model_file = hf_hub_download(
             self.config.controlnet_repo,
             filename="diffusion_pytorch_model_promax.safetensors",
+            revision=self.config.controlnet_revision,
         )
         state_dict = load_state_dict(model_file)
         controlnet.load_state_dict(state_dict)
@@ -142,12 +153,15 @@ class Uncropper:
         
         # Load VAE
         vae = AutoencoderKL.from_pretrained(
-            self.config.vae_model, torch_dtype=self._dtype
+            self.config.vae_model,
+            revision=self.config.vae_model_revision,
+            torch_dtype=self._dtype,
         ).to(self._device)
         
         # Load pipeline
         self.pipe = StableDiffusionXLFillPipeline.from_pretrained(
             self.config.base_model,
+            revision=self.config.base_model_revision,
             torch_dtype=self._dtype,
             vae=vae,
             controlnet=controlnet,
@@ -333,9 +347,14 @@ class Uncropper:
         landmark_offset_y: Optional[int] = None,
         centerize: bool = False,
         landmark_path: Optional[str] = None,
+        seed: Optional[int] = None,
     ) -> Tuple[Image.Image, Dict[str, Any]]:
         if self.pipe is None:
             raise RuntimeError("Pipeline not loaded. Call load_pipeline() first.")
+        if seed is not None and seed >= 0:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
         
         resize_percentage = resize_percentage or self.config.default_resize_percentage
         negative_prompt = negative_prompt or self.config.negative_prompt
@@ -576,6 +595,7 @@ class Uncropper:
         negative_prompt: Optional[str] = None,
         safeguard_resolution: float = 0.0,
         source_resize_percentage: float = 100.0,
+        seed: Optional[int] = None,
     ) -> Tuple[Image.Image, Dict[str, Any], Dict[str, Any]]:
         # Asymmetric uncrop: match target face ratio to source + align landmarks
         # safeguard_resolution reduces resize % for generation (more context) but not for crop-back
@@ -610,6 +630,7 @@ class Uncropper:
             negative_prompt=negative_prompt,
             landmark_offset_x=offset_x,
             landmark_offset_y=offset_y,
+            seed=seed,
         )
         
         extra_info = {

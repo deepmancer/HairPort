@@ -90,6 +90,22 @@ class ModelsConfig:
     lora_detail_xl: str = "add-detail-xl.safetensors"
     # Misc
     rembg_session: str = "birefnet-general"
+    # Immutable Hugging Face revisions for publication runs. Fill with snapshot commits.
+    flux_klein_revision: Optional[str] = None
+    flux_kontext_revision: Optional[str] = None
+    realvis_v4_revision: Optional[str] = None
+    realvis_v5_lightning_revision: Optional[str] = None
+    sdxl_vae_revision: Optional[str] = None
+    controlnet_union_revision: Optional[str] = None
+    mv_adapter_revision: Optional[str] = None
+    sam_revision: Optional[str] = None
+    sam_bald_konverter_revision: Optional[str] = None
+    ben2_revision: Optional[str] = None
+    face_parser_revision: Optional[str] = None
+    captioner_revision: Optional[str] = None
+    qwen_image_edit_revision: Optional[str] = None
+    qwen_lightning_lora_revision: Optional[str] = None
+    bald_konverter_revision: Optional[str] = None
 
 
 @dataclass
@@ -154,22 +170,37 @@ class CaptionConfig:
 
 @dataclass
 class ShapeMeshConfig:
-    target_faces: int = 150000
-    quality_threshold: float = 0.8
-    extra_tex_coord_weight: float = 4.0
-    min_size_mb: float = 20.0
-    frontalize_min_size_mb: float = 25.0
+    input_mesh_dir: str = "shape_mesh"
+    input_mesh_filename: str = "shape_mesh.glb"
+    input_image_dir: str = "matted_image_centered"
+    prompt_subdir: str = "prompt"
+    output_mesh_filename: str = "textured_mesh.glb"
+    variant: str = "sdxl"
+    sdxl_model_id: str = "SG161222/RealVisXL_V4.0"
+    reference_conditioning_scale: float = 1.0
+    align_input_mesh: bool = False
+    align_output_mesh: bool = True
+    preprocess_mesh: bool = True
+    remove_bg: bool = False
+    default_prompt_text: str = (
+        "high quality photo, photograph of a person, ultra-detailed, "
+        "strand-level hair, 8k, realistic hair texture"
+    )
 
 
 @dataclass
 class Landmark3DConfig:
     ortho_scale: float = 1.1
-    num_perturbations: int = 4
+    textured_mesh_ortho_scale: float = 0.5
+    num_perturbations: int = 0
     angle_range: float = 0.15
     trans_range: float = 0.05
     resolution: int = 1024
     optimize: bool = True
     super_resolution: bool = True
+    textured_mesh_filename: str = "textured_mesh.glb"
+    postprocessed_mesh_filename: str = "postprocessed_textured_mesh.glb"
+    target_landmark_extent: float = 0.4
     codeformer_fidelity: float = 0.0
     codeformer_upscale: int = 2
     default_cam_location: List[float] = field(
@@ -215,23 +246,16 @@ class EnhanceViewConfig:
     max_image_size: int = 1024
     bg_color: List[int] = field(default_factory=lambda: [255, 255, 255])
     padding_ratio: float = 0.05
+    conditioning_phase: int = 2
 
 
 @dataclass
 class BlendHairConfig:
     resolution: int = 1024
     optimization_resolution: int = 1024
-    codeformer_upscale: int = 2
-    codeformer_fidelity: float = 0.5
     alignment_iou_weight: float = 1.0
     alignment_landmark_weight: float = 1.0
     sam_confidence_threshold: float = 0.4
-    poisson_blend_strength: float = 0.5
-    dilation_size: int = 15
-    blur_size: int = 2
-    gaussian_sigma: int = 21
-    feather_px: int = 12
-    mask_threshold: float = 0.5
 
 
 @dataclass
@@ -246,6 +270,16 @@ class TransferHairConfig:
     uncrop_hair_threshold: float = 0.75
     uncrop_border_threshold: float = 0.025
     uncrop_resize_percentage: float = 80.0
+    conditioning_sources: List[str] = field(
+        default_factory=lambda: ["enhanced", "blended"]
+    )
+
+
+@dataclass
+class CacheConfig:
+    """Policy for reusing generated inference artifacts."""
+
+    policy: str = "validated"
 
 
 @dataclass
@@ -372,6 +406,7 @@ class HairPortConfig:
     enhance_view: EnhanceViewConfig = field(default_factory=EnhanceViewConfig)
     blend_hair: BlendHairConfig = field(default_factory=BlendHairConfig)
     transfer_hair: TransferHairConfig = field(default_factory=TransferHairConfig)
+    cache: CacheConfig = field(default_factory=CacheConfig)
     uncrop: UncropConfig = field(default_factory=UncropConfig)
     rendering: RenderingConfig = field(default_factory=RenderingConfig)
     rendering_fit_lmk: RenderingFitLmkConfig = field(
@@ -464,6 +499,7 @@ def load_config(
     # Resolve relative paths to absolute
     root_dir = _detect_root()
     _resolve_paths(merged, root_dir)
+    _validate_config(merged)
 
     # Freeze
     OmegaConf.set_readonly(merged, True)
@@ -478,6 +514,27 @@ def _resolve_paths(cfg: DictConfig, root: Path) -> None:
             p = Path(val)
             if not p.is_absolute():
                 OmegaConf.update(cfg, f"paths.{key}", str(root / p))
+
+
+def _validate_config(cfg: DictConfig) -> None:
+    """Reject published-pipeline settings that cannot be run correctly."""
+    if int(cfg.landmark_3d.num_perturbations) != 0:
+        raise ValueError(
+            "landmark_3d.num_perturbations must be 0: the supported HairPort "
+            "inference pipeline uses single frontal-view landmark projection."
+        )
+    conditioning_sources = list(cfg.transfer_hair.conditioning_sources)
+    valid_sources = {"enhanced", "blended"}
+    invalid = sorted(set(conditioning_sources) - valid_sources)
+    if not conditioning_sources or invalid:
+        raise ValueError(
+            "transfer_hair.conditioning_sources must contain one or more of "
+            f"{sorted(valid_sources)}; invalid values: {invalid}"
+        )
+    if str(cfg.cache.policy) != "validated":
+        raise ValueError("cache.policy must be 'validated' for reproducible inference.")
+    if int(cfg.enhance_view.conditioning_phase) not in (1, 2):
+        raise ValueError("enhance_view.conditioning_phase must be 1 or 2.")
 
 
 # --------------------------------------------------------------------------- #
