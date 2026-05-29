@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 import torch
 from PIL import Image
+from hairport.flame_assets import ensure_flame_model_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +63,14 @@ class FLAMESegmenter:
 
     Parameters
     ----------
-    flame_dir : str | Path
-        Path to ``FLAME2020/`` directory containing ``generic_model.pt``,
-        ``eyelids.pt``, and ``FLAME_masks.pkl``.
+    flame_model_runtime : str | Path | None
+        FLAME runtime model `.pt` path. Auto-generated from source if missing.
+    flame_model_source : str | Path | None
+        FLAME source `.pkl` path used for runtime conversion.
+    flame_masks_path : str | Path | None
+        FLAME segmentation mask file path (``FLAME_masks.pkl``).
+    flame_eyelids_path : str | Path | None
+        FLAME eyelids blendshape `.pt` path.
     model_type : str
         SHeaP model variant (``"expressive"`` or ``"neutral"``).
     device : str | torch.device
@@ -76,14 +82,38 @@ class FLAMESegmenter:
 
     def __init__(
         self,
-        flame_dir: Union[str, Path] = "FLAME2020",
+        flame_model_runtime: Union[str, Path, None] = None,
+        flame_model_source: Union[str, Path, None] = None,
+        flame_masks_path: Union[str, Path, None] = None,
+        flame_eyelids_path: Union[str, Path, None] = None,
+        flame_dir: Union[str, Path, None] = None,
         model_type: str = "expressive",
         device: Optional[Union[str, torch.device]] = None,
         max_expansion_iterations: int = 2,
     ):
         _require_sheap()
 
-        self.flame_dir = Path(flame_dir)
+        from hairport.config import get_config
+
+        cfg = get_config()
+        if flame_dir is not None:
+            flame_dir = Path(flame_dir)
+            default_runtime = flame_dir / "parametric_models" / "generic_model.pt"
+            default_source = flame_dir / "parametric_models" / "generic_model.pkl"
+            default_masks = flame_dir / "vertex_mappings" / "FLAME_masks.pkl"
+        else:
+            default_runtime = Path(cfg.paths.flame_model_runtime)
+            default_source = Path(cfg.paths.flame_model_source)
+            default_masks = Path(cfg.paths.flame_masks)
+
+        self.flame_model_source = Path(flame_model_source or default_source)
+        self.flame_model_runtime = Path(flame_model_runtime or default_runtime)
+        self.flame_masks_path = Path(flame_masks_path or default_masks)
+        self.flame_eyelids_path = Path(flame_eyelids_path or cfg.paths.flame_eyelids)
+        self.flame_model_runtime = ensure_flame_model_runtime(
+            self.flame_model_source,
+            self.flame_model_runtime,
+        )
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.model_type = model_type
         self.max_expansion_iterations = max_expansion_iterations
@@ -111,8 +141,8 @@ class FLAMESegmenter:
     def flame_model(self) -> "TinyFlame":
         if self._flame_model is None:
             self._flame_model = TinyFlame(
-                self.flame_dir / "generic_model.pt",
-                eyelids_ckpt=self.flame_dir / "eyelids.pt",
+                self.flame_model_runtime,
+                eyelids_ckpt=self.flame_eyelids_path,
             )
         return self._flame_model
 
@@ -168,7 +198,7 @@ class FLAMESegmenter:
         mask_verts, mask_faces, mask_colors = create_binary_mask_texture(
             verts[0],
             self.flame_model.faces,
-            flame_masks_path=self.flame_dir / "FLAME_masks.pkl",
+            flame_masks_path=self.flame_masks_path,
         )
         mask_render, _ = render_mesh(
             verts=mask_verts,

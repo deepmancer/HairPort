@@ -12,7 +12,7 @@ Usage::
     bald-konverter --input photo.jpg --output bald.png --mode wo_seg
 
     # With FLAME fitting
-    bald-konverter --input photo.jpg --output bald.png --use-flame --flame-dir FLAME2020/
+    bald-konverter --input photo.jpg --output bald.png --use-flame --flame-dir assets/base_models/flame
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--flame-dir", type=str, default=None,
-        help="Path to FLAME2020/ model directory (only with --use-flame).",
+        help="Path to FLAME base-model root directory (expects parametric_models/ and vertex_mappings/).",
     )
     parser.add_argument(
         "--device", type=str, default="cuda",

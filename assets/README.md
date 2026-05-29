@@ -8,27 +8,35 @@ required by the HairPort framework. It is **not checked into Git** (see
 
 ```
 assets/
-├── flame/
-│   └── FLAME2020/
-│       ├── generic_model.pt
+├── base_models/
+│   └── flame/
+│       ├── parametric_models/
+│       │   ├── generic_model.pkl
+│       │   └── generic_model.pt
+│       └── vertex_mappings/
+│           └── FLAME_masks.pkl
+├── landmarks/
+│   └── flame/
 │       ├── eyelids.pt
-│       └── FLAME_masks.pkl
-├── body_models/
-│   └── landmarks/
-│       └── flame/
-│           └── mediapipe_landmark_embedding.npz
+│       ├── mediapipe_landmark_embedding.npz
+│       └── flame_landmark_idxs_barys.pt
 └── checkpoints/
     └── (additional model checkpoints)
 ```
 
 ## How to populate
 
-1. **FLAME 2020** — Download from https://flame.is.tue.mpg.de and place files
-   under `assets/flame/FLAME2020/`.
+1. **FLAME base model + masks** — Place `generic_model.pkl` at
+   `assets/base_models/flame/parametric_models/` and `FLAME_masks.pkl` at
+   `assets/base_models/flame/vertex_mappings/`.
 
-2. **MediaPipe–FLAME mapping** — Copy or symlink
-   `mediapipe_landmark_embedding.npz` into
-   `assets/body_models/landmarks/flame/`.
+2. **Landmark assets** — Place `eyelids.pt` and
+   `mediapipe_landmark_embedding.npz` under `assets/landmarks/flame/`.
+   `flame_landmark_idxs_barys.pt` is tracked for interoperability but not
+   currently consumed by the inference runtime.
 
-3. **Other checkpoints** — Will be auto-downloaded by HuggingFace Hub the
+3. **Runtime conversion** — `generic_model.pt` is auto-generated from
+   `generic_model.pkl` during setup and preflight if missing.
+
+4. **Other checkpoints** — Will be auto-downloaded by HuggingFace Hub the
    first time the corresponding pipeline is loaded (BEN2, SAM 3.1, etc.).

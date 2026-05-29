@@ -62,7 +62,7 @@ cd "${REPO_ROOT}"
 
 # ── SHeaP downloads ──────────────────────────────────────────────────────────
 cd "${MODULES_DIR}/SHeaP"
-conda activate hairport && python convert_flame.py --flame_base_dir "${REPO_ROOT}/assets/"
+conda activate hairport && python convert_flame.py --flame_base_dir "${REPO_ROOT}/assets/base_models/flame/parametric_models"
 cd "${REPO_ROOT}"
 
 # ── Install editable packages where needed ─────────────────────────

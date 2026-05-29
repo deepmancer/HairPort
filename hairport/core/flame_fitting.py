@@ -32,6 +32,7 @@ import torch
 from PIL import Image
 from roma import rotvec_to_rotmat
 from scipy import ndimage
+from hairport.flame_assets import ensure_flame_model_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +101,15 @@ class FLAMEFitter:
 
     Parameters
     ----------
-    flame_dir : Path or str or None
-        Directory containing ``generic_model.pt``, ``eyelids.pt``, etc.
-        If *None*, resolved from :pydata:`hairport.config`.
+    flame_model_runtime : Path or str or None
+        FLAME runtime model `.pt` file path. If missing, the model is converted
+        from ``flame_model_source``.
+    flame_model_source : Path or str or None
+        FLAME source `.pkl` file path used to auto-generate runtime `.pt`.
+    flame_masks_path : Path or str or None
+        FLAME segmentation mask file path (``FLAME_masks.pkl``).
+    flame_eyelids_path : Path or str or None
+        FLAME eyelids blendshape `.pt` path.
     device : torch.device or None
         Compute device.
     model_type : str
@@ -115,7 +122,10 @@ class FLAMEFitter:
 
     def __init__(
         self,
-        flame_dir: Union[str, Path, None] = None,
+        flame_model_runtime: Union[str, Path, None] = None,
+        flame_model_source: Union[str, Path, None] = None,
+        flame_masks_path: Union[str, Path, None] = None,
+        flame_eyelids_path: Union[str, Path, None] = None,
         device: Optional[torch.device] = None,
         model_type: str | None = None,
         padding_ratio: float | None = None,
@@ -126,7 +136,14 @@ class FLAMEFitter:
         from hairport.config import get_config
         cfg = get_config()
 
-        self.flame_dir = Path(flame_dir) if flame_dir else Path(cfg.paths.flame_dir)
+        self.flame_model_source = Path(flame_model_source or cfg.paths.flame_model_source)
+        self.flame_model_runtime = Path(flame_model_runtime or cfg.paths.flame_model_runtime)
+        self.flame_masks_path = Path(flame_masks_path or cfg.paths.flame_masks)
+        self.flame_eyelids_path = Path(flame_eyelids_path or cfg.paths.flame_eyelids)
+        self.flame_model_runtime = ensure_flame_model_runtime(
+            self.flame_model_source,
+            self.flame_model_runtime,
+        )
         self.device = device or torch.device(cfg.device if torch.cuda.is_available() else "cpu")
         self.model_type = model_type or cfg.flame.model_type
         self.padding_ratio = padding_ratio if padding_ratio is not None else cfg.flame.padding_ratio
@@ -160,8 +177,8 @@ class FLAMEFitter:
     def flame_model(self) -> TinyFlame:
         if self._flame_model is None:
             self._flame_model = TinyFlame(
-                self.flame_dir / "generic_model.pt",
-                eyelids_ckpt=self.flame_dir / "eyelids.pt",
+                self.flame_model_runtime,
+                eyelids_ckpt=self.flame_eyelids_path,
             )
         return self._flame_model
 
@@ -259,7 +276,7 @@ class FLAMEFitter:
     def _render_flame_mask(self, verts: torch.Tensor, output_size: int = 512) -> np.ndarray:
         """Render binary FLAME mask with holes filled."""
         mask_verts, mask_faces, mask_colors = create_binary_mask_texture(
-            verts, self.flame_model.faces, flame_masks_path=self.flame_dir / "FLAME_masks.pkl"
+            verts, self.flame_model.faces, flame_masks_path=self.flame_masks_path
         )
         mask_render, _ = render_mesh(
             verts=mask_verts,

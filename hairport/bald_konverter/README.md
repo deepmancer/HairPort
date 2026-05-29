@@ -52,7 +52,7 @@ bald-konverter --input photo.jpg --output bald.png --mode wo_seg
 bald-konverter --input photo.jpg --output bald.png --save-intermediates
 
 # With FLAME fitting
-bald-konverter --input photo.jpg --output bald.png --use-flame --flame-dir FLAME2020/
+bald-konverter --input photo.jpg --output bald.png --use-flame --flame-dir assets/base_models/flame
 ```
 
 ## Architecture

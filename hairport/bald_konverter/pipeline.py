@@ -103,9 +103,10 @@ class BaldKonverterPipeline:
         Model precision.
     use_flame : bool
         If ``True``, use SHeaP FLAME fitting for the head mask (requires
-        ``pip install bald-konverter[flame]`` and the FLAME2020 model files).
+        ``pip install bald-konverter[flame]`` and the configured FLAME assets).
     flame_dir : str | Path, optional
-        Path to the ``FLAME2020/`` directory (only used if ``use_flame=True``).
+        Optional override for the FLAME base-model root directory
+        (expects ``parametric_models/`` and ``vertex_mappings/``).
     lora_path_wo_seg : str, optional
         Custom LoRA path for the wo_seg model.
     lora_path_w_seg : str, optional
@@ -211,7 +212,11 @@ class BaldKonverterPipeline:
             cfg = get_config()
 
             self._flame = FLAMESegmenter(
-                flame_dir=self._flame_dir or cfg.paths.flame_dir,
+                flame_model_runtime=cfg.paths.flame_model_runtime,
+                flame_model_source=cfg.paths.flame_model_source,
+                flame_masks_path=cfg.paths.flame_masks,
+                flame_eyelids_path=cfg.paths.flame_eyelids,
+                flame_dir=self._flame_dir,
                 device=self.device,
             )
         return self._flame

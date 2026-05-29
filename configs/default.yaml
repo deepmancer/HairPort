@@ -17,12 +17,15 @@ paths:
   assets_dir: assets
   modules_dir: modules
   output_dir: outputs
-  flame_dir: ${paths.assets_dir}/flame/FLAME2020
+  flame_model_source: ${paths.assets_dir}/base_models/flame/parametric_models/generic_model.pkl
+  flame_model_runtime: ${paths.assets_dir}/base_models/flame/parametric_models/generic_model.pt
+  flame_masks: ${paths.assets_dir}/base_models/flame/vertex_mappings/FLAME_masks.pkl
+  flame_eyelids: ${paths.assets_dir}/landmarks/flame/eyelids.pt
   codeformer_module: ${paths.modules_dir}/CodeFormer
   codeformer_weights: ${paths.assets_dir}/weights/codeformer
   mv_adapter_module: ${paths.modules_dir}/MV-Adapter
   sheap_module: ${paths.modules_dir}/SHeaP
-  mediapipe_flame_embedding: ${paths.assets_dir}/body_models/landmarks/flame/mediapipe_landmark_embedding.npz
+  mediapipe_flame_embedding: ${paths.assets_dir}/landmarks/flame/mediapipe_landmark_embedding.npz
 
 # ---- Model IDs / HuggingFace references ----
 models:
@@ -51,7 +54,6 @@ models:
   bald_lora_wo_seg: bald_konvertor_wo_seg_000003400.safetensors
   bald_lora_w_seg: bald_konvertor_w_seg_000004900.safetensors
   # FLAME
-  flame_model: generic_model.pt
   # Enhancement LoRA
   lora_detail_xl: add-detail-xl.safetensors
   # Background removal session

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterable
 
 from hairport.config import add_config_args, get_config, load_config_from_args
+from hairport.flame_assets import ensure_flame_model_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +32,20 @@ def validate_preflight(stages: Iterable[str] | None = None) -> list[str]:
     missing_runtime: list[str] = []
     flame_users = selected & {"landmark_3d", "align_view", "blend_hair"}
     if flame_users:
-        flame_dir = Path(cfg.paths.flame_dir)
+        flame_model_source = Path(cfg.paths.flame_model_source)
+        flame_model_runtime = Path(cfg.paths.flame_model_runtime)
+        try:
+            ensure_flame_model_runtime(flame_model_source, flame_model_runtime)
+        except FileNotFoundError:
+            # Let required-file checks below produce explicit file-level errors.
+            pass
+
         required.extend(
             [
-                (flame_dir / cfg.models.flame_model, "user-supplied FLAME model"),
-                (flame_dir / "eyelids.pt", "user-supplied FLAME eyelids asset"),
+                (flame_model_source, "FLAME source model (.pkl)"),
+                (flame_model_runtime, "FLAME runtime model (.pt)"),
+                (Path(cfg.paths.flame_masks), "FLAME vertex mask mapping"),
+                (Path(cfg.paths.flame_eyelids), "FLAME eyelids blendshape"),
                 (Path(cfg.paths.sheap_module), "SHeaP module"),
             ]
         )

@@ -128,21 +128,17 @@ Hi3DGen is not bundled. Generate shape meshes externally and place them at `shap
 
 ### 6. Add FLAME assets
 
-1. Register and download **FLAME 2020** from [flame.is.tue.mpg.de](https://flame.is.tue.mpg.de).
+1. Register and download **FLAME** assets from [flame.is.tue.mpg.de](https://flame.is.tue.mpg.de).
 2. Place the required files at:
 
 ```text
-assets/flame/FLAME2020/
-├── generic_model.pt
-├── eyelids.pt
-└── FLAME_masks.pkl
+assets/base_models/flame/parametric_models/generic_model.pkl
+assets/base_models/flame/vertex_mappings/FLAME_masks.pkl
+assets/landmarks/flame/eyelids.pt
+assets/landmarks/flame/mediapipe_landmark_embedding.npz
 ```
 
-3. Place the MediaPipe-FLAME landmark mapping at:
-
-```text
-assets/body_models/landmarks/flame/mediapipe_landmark_embedding.npz
-```
+`generic_model.pt` is auto-generated from `generic_model.pkl` during setup and preflight.
 
 Validate external modules and user-supplied assets before beginning GPU inference:
 
@@ -437,8 +433,8 @@ HairPort/
 │   └── setup_submodules.sh         # External module setup
 ├── assets/
 │   ├── images/                     # README figures
-│   ├── flame/FLAME2020/            # FLAME assets
-│   └── body_models/landmarks/flame/
+│   ├── base_models/flame/          # FLAME models + vertex mappings
+│   └── landmarks/flame/            # FLAME landmark and eyelid assets
 ├── hairport/
 │   ├── pipeline.py                 # HairPortPipeline orchestrator
 │   ├── config.py                   # OmegaConf config system

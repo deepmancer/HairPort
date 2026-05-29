@@ -10,7 +10,7 @@ Usage::
 
     cfg = get_config()                  # auto-loads configs/default.yaml
     print(cfg.models.flux_klein)        # "black-forest-labs/FLUX.2-klein-9B"
-    print(cfg.paths.flame_dir)          # resolved absolute path
+    print(cfg.paths.flame_model_runtime)  # resolved absolute path
 
 Override at startup::
 
@@ -47,13 +47,24 @@ class PathsConfig:
     assets_dir: str = "assets"
     modules_dir: str = "modules"
     output_dir: str = "outputs"
-    flame_dir: str = "${paths.assets_dir}/flame/FLAME2020"
+    flame_model_source: str = (
+        "${paths.assets_dir}/base_models/flame/parametric_models/generic_model.pkl"
+    )
+    flame_model_runtime: str = (
+        "${paths.assets_dir}/base_models/flame/parametric_models/generic_model.pt"
+    )
+    flame_masks: str = (
+        "${paths.assets_dir}/base_models/flame/vertex_mappings/FLAME_masks.pkl"
+    )
+    flame_eyelids: str = (
+        "${paths.assets_dir}/landmarks/flame/eyelids.pt"
+    )
     codeformer_module: str = "${paths.modules_dir}/CodeFormer"
     codeformer_weights: str = "${paths.assets_dir}/weights/codeformer"
     mv_adapter_module: str = "${paths.modules_dir}/MV-Adapter"
     sheap_module: str = "${paths.modules_dir}/SHeaP"
     mediapipe_flame_embedding: str = (
-        "${paths.assets_dir}/body_models/landmarks/flame/"
+        "${paths.assets_dir}/landmarks/flame/"
         "mediapipe_landmark_embedding.npz"
     )
 
@@ -84,8 +95,6 @@ class ModelsConfig:
     bald_konverter_repo: str = "deepmancer/bald_konverter"
     bald_lora_wo_seg: str = "bald_konvertor_wo_seg_000003400.safetensors"
     bald_lora_w_seg: str = "bald_konvertor_w_seg_000004900.safetensors"
-    # FLAME
-    flame_model: str = "generic_model.pt"
     # Enhancement
     lora_detail_xl: str = "add-detail-xl.safetensors"
     # Misc

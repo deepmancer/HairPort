@@ -48,7 +48,8 @@ class BaldifyStage:
     use_flame : bool
         Whether to use SHeaP FLAME fitting for head segmentation.
     flame_dir : str | Path | None
-        Path to FLAME2020/ model directory (only with *use_flame*).
+        Optional FLAME base-model root override (expects
+        ``parametric_models/`` and ``vertex_mappings/``).
     """
 
     def __init__(
@@ -279,7 +280,10 @@ def main(argv: list[str] | None = None):
     parser.add_argument("--guidance-scale", type=float, default=None)
     parser.add_argument("--strength", type=float, default=None)
     parser.add_argument("--use-flame", action="store_true")
-    parser.add_argument("--flame-dir", type=str, default=None)
+    parser.add_argument(
+        "--flame-dir", type=str, default=None,
+        help="FLAME base-model root override (expects parametric_models/ and vertex_mappings/).",
+    )
     add_config_args(parser)
     args = parser.parse_args(argv)
     load_config_from_args(args)

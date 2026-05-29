@@ -211,9 +211,7 @@ __marimo__/
 # ============================================================================
 
 # Downloaded model weights and large assets
-# assets/flame/
 assets/checkpoints/
-# assets/body_models/
 
 # External submodule clones (use scripts/setup_submodules.sh)
 modules/
