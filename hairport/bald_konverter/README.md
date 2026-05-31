@@ -125,4 +125,4 @@ src/bald_konverter/
 
 ## License
 
-MIT
+This component follows the repository license: Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0). Third-party dependencies and model weights retain their own upstream licenses and terms.

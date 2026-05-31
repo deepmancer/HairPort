@@ -1,15 +1,16 @@
 <h1 align="center">HairPort</h1>
 
 <p align="center">
-  <strong>In-context 3D-Aware Hair Import and Transfer for Images</strong>
+  <strong>In-context 3D-aware Hair Import and Transfer for Images</strong>
   <br>
-  <strong>ACM SIGGRAPH 2026</strong>
+  <strong>SIGGRAPH Conference Papers '26</strong>
   <br>
   A. Heidari, A. Alimohammadi, W. Michel Pinto Lira, A. Bar-Lev, and A. Mahdavi-Amiri
 </p>
 
 <p align="center">
-  <img alt="Paper coming soon" src="https://img.shields.io/badge/Paper-coming%20soon-lightgrey?style=for-the-badge">
+  <a href="https://doi.org/10.1145/3799902.3811046"><img alt="Paper DOI" src="https://img.shields.io/badge/DOI-10.1145%2F3799902.3811046-2f6f9f?style=for-the-badge"></a>
+  <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/"><img alt="License: CC BY-NC-ND 4.0" src="https://img.shields.io/badge/License-CC%20BY--NC--ND%204.0-dc6f35?style=for-the-badge"></a>
   <a href="https://deepmancer.github.io/HairPort/"><img alt="Project page" src="https://img.shields.io/badge/Project%20Page-live-2ea44f?style=for-the-badge"></a>
   <img alt="Video coming soon" src="https://img.shields.io/badge/Video-coming%20soon-lightgrey?style=for-the-badge">
   <a href="https://huggingface.co/deepmancer/bald_konverter"><img alt="Bald Converter weights" src="https://img.shields.io/badge/Weights-Bald%20Converter-ffcc4d?style=for-the-badge"></a>
@@ -22,7 +23,8 @@ HairPort transfers a reference hairstyle onto a source face while explicitly han
 
 ## News
 
-- **May 2026:** HairPort was accepted to **ACM SIGGRAPH 2026**.
+- **May 2026:** ACM assigned the HairPort DOI: [10.1145/3799902.3811046](https://doi.org/10.1145/3799902.3811046).
+- **May 2026:** HairPort was accepted to **SIGGRAPH Conference Papers '26**.
 - **May 2026:** Launched the [HairPort project page](https://deepmancer.github.io/HairPort/).
 - **April 2026:** Initial HairPort source code released; packaging and dependency manifests will be finalized soon.
 - **April 2026:** Released the [Baldy dataset](https://huggingface.co/datasets/deepmancer/baldy) for paired bald/original image training.
@@ -59,7 +61,7 @@ HairPort transfers a reference hairstyle onto a source face while explicitly han
 
 Transferring hairstyles between images is an important but challenging task in computer graphics, computer vision, and visual effects. It enables users to explore new looks without physically altering their hair, with applications in virtual try-on systems, augmented reality, and entertainment. Most prior works operate best under small pose gaps, and they fall short under large viewpoint and scale differences, where missing hair content must be synthesized rather than transferred.
 
-We propose **HairPort**, a 3D-aware hairstyle transfer framework that addresses these issues by explicitly separating hair removal from transfer and enforcing geometric consistency before synthesis. We introduce a **Bald Converter**, which produces realistic bald versions of faces through LoRA-based in-context adaptation of FLUX. To train the Bald Converter, we introduce a new dataset, **Baldy**, containing 6,400 paired bald and original images across diverse identities and conditions. We also use a **3D-Aware Transfer Pipeline** that reconstructs and re-renders the reference hairstyle from the target viewpoint before compositing it onto the source image. Being 3D-aware, our method supports large pose and scale discrepancies between the source and target. With these components in place, we employ a conditional flow-matching generator to synthesize the final image conditioned on the bald source, the pose-aligned hair rendering, the original reference image, and a text prompt. Together, our method enables accurate, pose-consistent, and identity-preserving hairstyle transfer, outperforming existing methods both qualitatively and quantitatively.
+We propose **HairPort**, a 3D-aware hairstyle transfer framework that addresses these issues by explicitly separating hair removal from transfer and enforcing geometric consistency before synthesis. We introduce a **Bald Converter**, which produces realistic bald versions of faces through LoRA-based in-context adaptation of FLUX. To train the Bald Converter, we introduce a new dataset, **Baldy**, containing 6,400 paired bald and original images across diverse identities and conditions. We also use a **3D-aware Transfer Pipeline** that reconstructs and re-renders the reference hairstyle from the target viewpoint before compositing it onto the source image. Being 3D-aware, our method supports large pose and scale discrepancies between the source and target. With these components in place, we employ a conditional flow-matching generator to synthesize the final image conditioned on the bald source, the pose-aligned hair rendering, the original reference image, and a text prompt. Together, our method enables accurate, pose-consistent, and identity-preserving hairstyle transfer, outperforming existing methods both qualitatively and quantitatively.
 
 </details>
 
@@ -475,12 +477,18 @@ Please refer to the respective projects for their licenses, model terms, and cit
 
 If you use HairPort in your research, please cite:
 
+Publication details: SIGGRAPH Conference Papers '26, July 19--23, 2026, Los Angeles, CA, USA. DOI: [10.1145/3799902.3811046](https://doi.org/10.1145/3799902.3811046). ACM ISBN: `979-8-4007-2554-8/2026/07`.
+
 ```bibtex
 @inproceedings{heidari2026hairport,
-  title     = {HairPort: In-context 3D-Aware Hair Import and Transfer for Images},
+  title     = {HairPort: In-context 3D-aware Hair Import and Transfer for Images},
   author    = {A. Heidari and A. Alimohammadi and W. Michel Pinto Lira and A. Bar-Lev and A. Mahdavi-Amiri},
-  booktitle = {ACM SIGGRAPH 2026},
-  year      = {2026}
+  booktitle = {Special Interest Group on Computer Graphics and Interactive Techniques Conference Conference Papers (SIGGRAPH Conference Papers '26)},
+  year      = {2026},
+  isbn      = {979-8-4007-2554-8/2026/07},
+  doi       = {10.1145/3799902.3811046},
+  url       = {https://doi.org/10.1145/3799902.3811046},
+  location  = {Los Angeles, CA, USA}
 }
 ```
 
@@ -488,6 +496,8 @@ If you use HairPort in your research, please cite:
 
 ## License
 
-This project is released under the [MIT License](LICENSE).
+This repository is released under the [Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License](LICENSE) ([CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/)).
+
+Unless otherwise noted, this license applies to the HairPort source code, documentation, and repository-owned assets. Third-party code, models, datasets, and external assets retain their own upstream licenses, model terms, and citation requirements.
 
 Copyright (c) 2026
