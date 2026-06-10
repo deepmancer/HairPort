@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
-"""Download HairPort landmark/FLAME assets for the landmark & alignment stages.
+"""Download and place every data asset HairPort + PEAR need at runtime.
 
 Fetches ``hairport_data.zip`` from https://huggingface.co/deepmancer/bald_konverter
-and extracts its ``base_models/`` and ``landmarks/`` trees into ``assets/`` (the
-layout in ``configs/default.yaml``, e.g. ``landmarks/flame/mediapipe_landmark_embedding.npz``).
-The fitting backend (PEAR) ships its own SMPL-X/FLAME models under
-``modules/PEAR/assets`` (see ``scripts/setup_submodules.sh``) — separate from these.
+and extracts it into the repository, placing each file where the code expects it:
 
-Idempotent (``--force`` to overwrite). The FLAME model is under its own license
-(https://flame.is.tue.mpg.de) — downloading implies acceptance.
+    assets/landmarks/...                 # MediaPipe/FLAME landmark embeddings
+    modules/PEAR/assets/FLAME/...        # PEAR FLAME runtime assets
+    modules/PEAR/assets/SMPLX/...        # PEAR SMPL-X runtime assets
+
+The bundle holds only the files the pipeline actually loads (PEAR head/body
+fitting + silhouette render). Model weights that auto-download at first run are
+NOT bundled: the PEAR EHM checkpoint (``BestWJH/PEAR_models``, fetched by
+``hairport.fitting``) and the YOLO detector (``yolov8x.pt``, fetched by
+ultralytics).
+
+Idempotent (``--force`` to overwrite). The FLAME / SMPL-X models are under their
+own licenses (https://flame.is.tue.mpg.de, https://smpl-x.is.tue.mpg.de) —
+downloading implies acceptance.
 """
 
 from __future__ import annotations
@@ -20,17 +28,18 @@ from pathlib import Path
 
 REPO_ID = "deepmancer/bald_konverter"
 ZIP_FILENAME = "hairport_data.zip"
-# Top-level trees inside the zip that we extract into assets/.
-WANTED_PREFIXES = ("base_models/", "landmarks/")
+# Top-level trees inside the zip, extracted relative to the repo root.
+WANTED_PREFIXES = ("assets/", "modules/")
 
 
 def main(argv: list[str] | None = None) -> int:
+    repo_root = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument(
-        "--assets-dir",
+        "--root",
         type=Path,
-        default=Path(__file__).resolve().parent.parent / "assets",
-        help="Destination assets directory (default: <repo>/assets).",
+        default=repo_root,
+        help="Repository root to extract into (default: the HairPort checkout).",
     )
     parser.add_argument(
         "--force", action="store_true", help="Overwrite files that already exist."
@@ -42,8 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Downloading {REPO_ID}/{ZIP_FILENAME} (cached after first run)...")
     zip_path = hf_hub_download(repo_id=REPO_ID, filename=ZIP_FILENAME)
 
-    assets_dir: Path = args.assets_dir
-    assets_dir.mkdir(parents=True, exist_ok=True)
+    root: Path = args.root.resolve()
+    root.mkdir(parents=True, exist_ok=True)
 
     extracted, skipped = 0, 0
     with zipfile.ZipFile(zip_path) as zf:
@@ -51,8 +60,8 @@ def main(argv: list[str] | None = None) -> int:
             name = info.filename
             if info.is_dir() or not name.startswith(WANTED_PREFIXES):
                 continue
-            target = assets_dir / name
-            if not target.resolve().is_relative_to(assets_dir.resolve()):
+            target = (root / name).resolve()
+            if not target.is_relative_to(root):
                 raise RuntimeError(f"Refusing unsafe zip path: {name}")
             if target.exists() and not args.force:
                 skipped += 1
@@ -63,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             extracted += 1
 
     print(f"Done: {extracted} files extracted, {skipped} already present.")
-    print(f"Assets root: {assets_dir}")
+    print(f"Placed under: {root}/assets and {root}/modules/PEAR/assets")
     return 0
 
 

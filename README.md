@@ -121,8 +121,7 @@ cd HairPort
 ### 5. Set up external modules
 
 This initializes the CodeFormer / MV-Adapter clones and the **PEAR** head/body
-fitting submodule, downloads PEAR's parametric-model assets, and builds
-pytorch3d:
+fitting submodule, downloads all data assets, and builds pytorch3d:
 
 ```bash
 bash scripts/setup_submodules.sh
@@ -131,17 +130,20 @@ bash scripts/setup_submodules.sh
 Head and body fitting is performed by [PEAR](https://github.com/Pixel-Talk/PEAR)
 (SMPL-X + FLAME EHM recovery), wrapped behind the modular
 [`hairport.fitting`](hairport/fitting/) backend layer. PEAR's `ehm_model_stage1.pt`
-checkpoint is auto-downloaded from the Hugging Face Hub on first use; its
-parametric assets (SMPL-X / SMPL / FLAME) come from the PEAR authors' bundle
-(downloaded by the setup script). The person detector is YOLOv8
-(`ultralytics`, **AGPL-3.0** — see the License section).
+checkpoint is auto-downloaded from the Hugging Face Hub on first use, and the
+person detector is YOLOv8 (`ultralytics`, **AGPL-3.0** — see the License
+section), also auto-downloaded. PEAR's parametric assets (SMPL-X / FLAME) ship in
+the `hairport_data.zip` bundle (step 6).
 
 Hi3DGen is not bundled. Generate shape meshes externally and place them at `shape_mesh/<id>/shape_mesh.glb` before running the full transfer pipeline.
 
-### 6. Add landmark assets
+### 6. Download data assets
 
-PEAR ships its own SMPL-X / FLAME parametric models (step 5). The pipeline's
-MediaPipe landmark embedding is fetched separately:
+`scripts/download_assets.py` fetches `hairport_data.zip` from the Hugging Face Hub
+and places everything the pipeline + PEAR need: the MediaPipe/FLAME landmark
+embeddings (`assets/landmarks/`) and the PEAR runtime models
+(`modules/PEAR/assets/{FLAME,SMPLX}`). The setup script in step 5 already runs it;
+to (re)fetch on its own:
 
 ```bash
 python scripts/download_assets.py

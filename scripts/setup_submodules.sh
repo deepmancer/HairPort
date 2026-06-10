@@ -61,17 +61,15 @@ cd "${REPO_ROOT}"
 
 cd "${REPO_ROOT}"
 
-# ── PEAR assets ───────────────────────────────────────────────────────────────
-# PEAR expects parametric models under modules/PEAR/assets/{SMPLX,FLAME,SMPL,...}.
-# Download the prepared bundle from the PEAR authors' Google Drive and extract it
-# in place. By downloading you accept the SMPL-X / SMPL / FLAME license terms.
-echo ">> Downloading PEAR asset bundle..."
+# ── HairPort + PEAR data assets ─────────────────────────────────────────────────
+# Pipeline landmark embeddings (assets/landmarks) and PEAR runtime models
+# (modules/PEAR/assets/{FLAME,SMPLX}) ship together in hairport_data.zip on the
+# Hugging Face Hub. By downloading you accept the SMPL-X / FLAME license terms.
+echo ">> Downloading HairPort + PEAR data assets..."
 if [[ ! -f "${MODULES_DIR}/PEAR/assets/SMPLX/SMPLX_NEUTRAL_2020.npz" ]]; then
-    gdown 1HvJ4WljPhEjoVgFBQurGLoKFN9-9UBb0 -O /tmp/pear_assets.zip
-    unzip -q -o /tmp/pear_assets.zip -d "${MODULES_DIR}/PEAR"
-    rm -f /tmp/pear_assets.zip
+    python "${REPO_ROOT}/scripts/download_assets.py"
 else
-    echo ">> PEAR assets already present, skipping."
+    echo ">> Data assets already present, skipping."
 fi
 
 # ── pytorch3d (required by PEAR's renderer / mesh ops) ──────────────────────────

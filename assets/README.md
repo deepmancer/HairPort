@@ -5,9 +5,10 @@ used by the HairPort framework. Large weights are **not checked into Git** (see
 `.gitignore`); a few small landmark files and the README figures are tracked
 directly.
 
-> **Note** — the head/body parametric models (SMPL-X, SMPL, FLAME) live with the
-> **PEAR** fitting submodule under `modules/PEAR/assets/`, not here. They are
-> downloaded by `scripts/setup_submodules.sh`. See the repository README §5.
+> **Note** — the head/body parametric models (SMPL-X, FLAME) used by the **PEAR**
+> fitting submodule live under `modules/PEAR/assets/`, not here. They ship in the
+> same `hairport_data.zip` bundle and are placed by `scripts/download_assets.py`.
+> See the repository README §5.
 
 ## Expected layout
 
@@ -25,11 +26,13 @@ assets/
 
 ## How to populate
 
-**One step (recommended):**
+`scripts/download_assets.py` fetches `hairport_data.zip` from the Hugging Face Hub
+and places **both** the landmark embeddings (`assets/landmarks/`) and the PEAR
+runtime models (`modules/PEAR/assets/{FLAME,SMPLX}`):
 
 ```bash
-python scripts/download_assets.py        # landmark embeddings into assets/landmarks/
-bash   scripts/setup_submodules.sh        # PEAR parametric models into modules/PEAR/assets/
+python scripts/download_assets.py        # all data assets
+bash   scripts/setup_submodules.sh        # submodules + pytorch3d (also runs the above)
 ```
 
 By downloading the parametric models you agree to the
