@@ -78,11 +78,11 @@ def process_shape_meshes(
 ):
     """Process 3D landmark fitting for all samples in random order.
     
-    Head orientation is computed via FLAMEFitter (SHeaP) and cached under
+    Head orientation is computed via the fitting backend (PEAR) and cached under
     ``<data_dir>/head_orientation/<sample_id>/head_orientation.json``.
     This replaces the legacy pixel3dmm dependency.
     """
-    from hairport.core.flame_fitting import compute_head_orientation
+    from hairport.fitting.orientation import compute_head_orientation
 
     all_sample_ids = os.listdir(str(textured_mesh_dir))
     sample_ids = all_sample_ids
@@ -104,8 +104,8 @@ def process_shape_meshes(
                 if file_size_mb >= 25:
                     to_frontalize_ids.append(folder)
 
-    # Lazily-initialised FLAMEFitter (shared across all samples)
-    fitter = None
+    # Lazily-initialised fitting backend (shared across all samples)
+    backend = None
 
     for sample_id in tqdm(sample_ids, desc="Frontalizing Meshes", unit="sample"):
         target_textured_mesh_path = textured_mesh_dir / sample_id / "shape_mesh.glb"
@@ -114,7 +114,7 @@ def process_shape_meshes(
         if not target_textured_mesh_path.exists():
             continue
 
-        # Resolve head orientation via FLAMEFitter (cached)
+        # Resolve head orientation via the fitting backend (cached)
         image_path = data_dir / "image" / f"{sample_id}.png"
         cache_dir = data_dir / "head_orientation" / sample_id
         if not image_path.exists():
@@ -125,7 +125,7 @@ def process_shape_meshes(
             head_orientation_dict = compute_head_orientation(
                 image_path=image_path,
                 cache_dir=cache_dir,
-                fitter=fitter,
+                backend=backend,
             )
         except Exception as e:
             logger.warning(f"Could not compute head orientation for {sample_id}: {e}")

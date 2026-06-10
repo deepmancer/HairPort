@@ -14,4 +14,4 @@ echo "Wrote exact Python environment lock: ${OUTPUT_PATH}"
 echo "Pinned external module revisions:"
 git -C "${REPO_ROOT}/modules/CodeFormer" rev-parse HEAD
 git -C "${REPO_ROOT}/modules/MV-Adapter" rev-parse HEAD
-git -C "${REPO_ROOT}/modules/SHeaP" rev-parse HEAD
+git -C "${REPO_ROOT}/modules/PEAR" rev-parse HEAD

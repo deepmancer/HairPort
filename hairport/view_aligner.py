@@ -109,13 +109,13 @@ def compute_lift_3d(
 ) -> tuple[bool, float]:
     """Compute whether 3D lifting is needed based on angle difference between target and source.
 
-    Head orientation is obtained via FLAMEFitter (SHeaP) and cached under
+    Head orientation is obtained via the fitting backend (PEAR) and cached under
     ``<data_dir>/<DIR_HEAD_ORIENTATION>/<id>/head_orientation.json``.
     
     Returns:
         tuple[bool, float]: (lift_3d_decision, angle_difference_in_radians)
     """
-    from hairport.core.flame_fitting import compute_head_orientation
+    from hairport.fitting.orientation import compute_head_orientation
 
     if config is None:
         config = Config()
@@ -304,13 +304,13 @@ def run_camera_optimization(
     """Run camera optimization for a source-target pair that requires 3D lifting.
     Assumes outpainting has already been computed.
 
-    Head orientation is obtained via FLAMEFitter (SHeaP), removing the
+    Head orientation is obtained via the fitting backend (PEAR), removing the
     legacy pixel3dmm dependency.
 
     Returns:
         bool: True if optimization was run, False if skipped (already exists)
     """
-    from hairport.core.flame_fitting import compute_head_orientation
+    from hairport.fitting.orientation import compute_head_orientation
 
     if config is None:
         config = Config()
@@ -332,7 +332,7 @@ def run_camera_optimization(
         print(f"Skipping camera optimization (already exists): {target_id} -> {source_id}")
         return False
 
-    # Compute / load head orientation via FLAMEFitter
+    # Compute / load head orientation via the fitting backend
     source_image_path = os.path.join(data_dir, "image", f"{source_id}.png")
     target_image_path = os.path.join(data_dir, "image", f"{target_id}.png")
 
@@ -459,7 +459,7 @@ def prepare_pairs(
 
     When ``lift_3d`` and ``head_diff_angle`` columns are fully populated the
     values are trusted as-is (no recomputation).  Only rows with missing
-    values trigger FLAMEFitter-based orientation computation.
+    values trigger backend-based orientation computation.
 
     If no CSV is found an error is raised — the legacy fallback that
     generated O(n²) cross-product pairs has been removed.
@@ -503,7 +503,7 @@ def prepare_pairs(
                 head_diff_angle = float(row['head_diff_angle'])
                 status = "provided"
             else:
-                # Compute lift_3d and head_diff_angle via FLAMEFitter
+                # Compute lift_3d and head_diff_angle via the fitting backend
                 try:
                     lift_3d, head_diff_angle = compute_lift_3d(data_dir, target_id, source_id, config)
                     status = "computed"

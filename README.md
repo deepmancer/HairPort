@@ -71,7 +71,7 @@ We propose **HairPort**, a 3D-aware hairstyle transfer framework that addresses 
 
 > **Official source preview.** This repository contains the official SIGGRAPH 2026 implementation snapshot, including the pipeline source, configuration, asset layout, README figures, Bald Converter links, and dataset links.
 >
-> Packaging is still being finalized: this snapshot does **not** include `pyproject.toml`, `setup.py`, `setup.cfg`, a pinned dependency manifest, or installed console-script entry points. For now, run commands from the repository root with `python -m ...` and set `PYTHONPATH` as shown below.
+> The repository ships a `pyproject.toml`: `pip install -e .` installs the `hairport` package and the `bald-konverter` console script. Runtime dependencies (CUDA wheels, git packages) are managed separately via `requirements.txt` / `scripts/install.sh`.
 
 ---
 
@@ -82,7 +82,7 @@ We propose **HairPort**, a 3D-aware hairstyle transfer framework that addresses 
 - **Python** >= 3.10
 - **CUDA-capable GPU** recommended; most stages are GPU-heavy and >=24 GB VRAM is recommended
 - **Blender** >= 4.0 for multi-view rendering in 3D landmark and rendering stages
-- **Hugging Face access** for auto-downloaded model weights
+- **Hugging Face access** for auto-downloaded model weights. The Bald Converter base model [`black-forest-labs/FLUX.1-Kontext-dev`](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev) is **gated**: accept its license and authenticate with `huggingface-cli login` before first use.
 
 ### 1. Create an environment
 
@@ -104,7 +104,7 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ```bash
 git clone https://github.com/deepmancer/HairPort.git
 cd HairPort
-export PYTHONPATH="$PWD:${PYTHONPATH}"
+pip install -e .   # installs the `hairport` package + `bald-konverter` CLI
 ```
 
 ### 4. Install remaining dependencies
@@ -120,27 +120,36 @@ cd HairPort
 
 ### 5. Set up external modules
 
-This clones CodeFormer, MV-Adapter, and SHeaP at the pinned inference revisions in the setup script:
+This initializes the CodeFormer / MV-Adapter clones and the **PEAR** head/body
+fitting submodule, downloads PEAR's parametric-model assets, and builds
+pytorch3d:
 
 ```bash
 bash scripts/setup_submodules.sh
 ```
 
+Head and body fitting is performed by [PEAR](https://github.com/Pixel-Talk/PEAR)
+(SMPL-X + FLAME EHM recovery), wrapped behind the modular
+[`hairport.fitting`](hairport/fitting/) backend layer. PEAR's `ehm_model_stage1.pt`
+checkpoint is auto-downloaded from the Hugging Face Hub on first use; its
+parametric assets (SMPL-X / SMPL / FLAME) come from the PEAR authors' bundle
+(downloaded by the setup script). The person detector is YOLOv8
+(`ultralytics`, **AGPL-3.0** — see the License section).
+
 Hi3DGen is not bundled. Generate shape meshes externally and place them at `shape_mesh/<id>/shape_mesh.glb` before running the full transfer pipeline.
 
-### 6. Add FLAME assets
+### 6. Add landmark assets
 
-1. Register and download **FLAME** assets from [flame.is.tue.mpg.de](https://flame.is.tue.mpg.de).
-2. Place the required files at:
+PEAR ships its own SMPL-X / FLAME parametric models (step 5). The pipeline's
+MediaPipe landmark embedding is fetched separately:
 
-```text
-assets/base_models/flame/parametric_models/generic_model.pkl
-assets/base_models/flame/vertex_mappings/FLAME_masks.pkl
-assets/landmarks/flame/eyelids.pt
-assets/landmarks/flame/mediapipe_landmark_embedding.npz
+```bash
+python scripts/download_assets.py
 ```
 
-`generic_model.pt` is auto-generated from `generic_model.pkl` during setup and preflight.
+By downloading the FLAME/SMPL-X assets you agree to the
+[FLAME](https://flame.is.tue.mpg.de) and
+[SMPL-X](https://smpl-x.is.tue.mpg.de) license terms.
 
 Validate external modules and user-supplied assets before beginning GPU inference:
 
@@ -341,9 +350,37 @@ Configuration covers:
 - `cache.policy: validated`: artifacts are reused only when their provenance sidecar matches
 
 Generated artifacts carry `.provenance.json` sidecars recording resolved configuration, inputs, model identifiers/revisions, and seeds. Existing artifacts without matching provenance are regenerated. Validated cache reuse is disabled while the repository checkout has uncommitted changes, since such a state cannot name the producing code exactly.
-For publication runs, set the `models.*_revision` values to immutable Hugging Face snapshot commits; preflight warns when a selected stage uses an unpinned revision. These fields cover FLUX, RealVis/SDXL, ControlNet, MV-Adapter, SAM, BEN2, face parsing, Qwen, and Bald Converter dependencies used by the supported pipeline.
+For publication runs, set the `models.*_revision` values to immutable Hugging Face snapshot commits; preflight warns when a selected stage uses an unpinned revision. These fields cover FLUX, RealVis/SDXL, ControlNet, MV-Adapter, SAM, BEN2, PEAR, Qwen, and Bald Converter dependencies used by the supported pipeline.
 Per-item seeds make sampled decisions reproducible; exact pixel equality additionally depends on deterministic GPU kernels and is recorded in provenance through the active Torch/cuDNN determinism flags.
 Stage 3 invokes the pinned external MV-Adapter checkout; for reported runs, set `shape_mesh.sdxl_model_id` to an immutable local Hugging Face snapshot path so its internal loader cannot resolve a moving repository head.
+
+### Memory policy (GPU model residency)
+
+Large models are never kept on the GPU together. `memory.policy` in
+[`configs/default.yaml`](configs/default.yaml) controls this:
+
+- `exclusive` (default) — at most one large model is GPU-resident at a time;
+  the others are parked in CPU RAM between usage windows (e.g. the bald
+  converter offloads FLUX while SAM3/BEN2 preprocessing and the PEAR SMPL-X fit
+  run, and the hair-transfer stage offloads FLUX.2 Klein during SDXL
+  uncropping). Costs a few seconds of PCIe transfer per swap.
+- `resident` — legacy behavior: models stay loaded for maximum speed.
+
+`memory.flux_offload` (`none` | `model` | `sequential`) additionally enables
+diffusers component-level CPU offload for the big pipelines (FLUX.1-Kontext,
+FLUX.2 Klein, MV-Adapter SDXL): `model` keeps only the active component
+(text encoder / transformer / VAE) on GPU — roughly halving peak VRAM for
+~10-20 % speed — and `sequential` minimizes VRAM at a larger speed cost.
+
+```bash
+# Fastest (legacy) behavior:
+python -m hairport.pipeline --set memory.policy=resident
+# Lowest VRAM:
+python -m hairport.pipeline --set memory.flux_offload=model
+```
+
+Residency utilities live in `hairport/memory.py` (`on_gpu`, `offload`,
+`apply_offload_mode`) — new stages should route model placement through them.
 
 Override defaults with a custom YAML file:
 
@@ -435,14 +472,17 @@ HairPort/
 │   └── setup_submodules.sh         # External module setup
 ├── assets/
 │   ├── images/                     # README figures
-│   ├── base_models/flame/          # FLAME models + vertex mappings
-│   └── landmarks/flame/            # FLAME landmark and eyelid assets
+│   └── landmarks/flame/            # MediaPipe/FLAME landmark embeddings
+├── modules/
+│   └── PEAR/                       # PEAR fitting submodule (+ its assets/)
 ├── hairport/
 │   ├── pipeline.py                 # HairPortPipeline orchestrator
 │   ├── config.py                   # OmegaConf config system
 │   ├── data.py                     # Dataset path management
+│   ├── memory.py                   # GPU model-residency policy
 │   ├── stages/                     # Pipeline stage modules
 │   ├── bald_konverter/             # Bald Converter package
+│   ├── fitting/                    # Modular head/body fitting backends (PEAR)
 │   ├── fit_lmk/                    # 3D landmark estimation
 │   ├── core/                       # Shared vision and geometry components
 │   ├── utility/                    # Rendering, warping, outpainting utilities
@@ -461,13 +501,17 @@ HairPort/
 |--------|------------|----------|
 | CodeFormer | [sczhou/CodeFormer](https://github.com/sczhou/CodeFormer) | Face super-resolution |
 | MV-Adapter | [huanngzh/MV-Adapter](https://github.com/huanngzh/MV-Adapter) | Multi-view generation adapter for SDXL |
-| SHeaP | [deepmancer/SHeaP](https://github.com/deepmancer/SHeaP) | FLAME-based head segmentation and orientation |
+| PEAR | [Pixel-Talk/PEAR](https://github.com/Pixel-Talk/PEAR) | SMPL-X + FLAME head/body fitting (head segmentation and orientation) |
+
+PEAR uses YOLOv8 (`ultralytics`) for person detection, which is **AGPL-3.0**
+licensed; the PEAR code itself is Apache-2.0. SMPL-X / SMPL / FLAME parametric
+models retain their MPI license terms.
 
 ---
 
 ## Acknowledgements
 
-HairPort builds on a number of excellent open-source projects and research assets. We thank the authors and maintainers of [MV-Adapter](https://github.com/huanngzh/MV-Adapter), [Hi3DGen](https://github.com/Stable-X/Hi3DGen), [CodeFormer](https://github.com/sczhou/CodeFormer), [SHeaP](https://github.com/deepmancer/SHeaP), [FLAME](https://flame.is.tue.mpg.de), MediaPipe, Segment Anything, BEN2, Hugging Face Diffusers/Transformers, FLUX, and Qwen for making their work available to the community.
+HairPort builds on a number of excellent open-source projects and research assets. We thank the authors and maintainers of [MV-Adapter](https://github.com/huanngzh/MV-Adapter), [Hi3DGen](https://github.com/Stable-X/Hi3DGen), [CodeFormer](https://github.com/sczhou/CodeFormer), [PEAR](https://github.com/Pixel-Talk/PEAR), [FLAME](https://flame.is.tue.mpg.de), [SMPL-X](https://smpl-x.is.tue.mpg.de), MediaPipe, Segment Anything, BEN2, Hugging Face Diffusers/Transformers, FLUX, and Qwen for making their work available to the community.
 
 Please refer to the respective projects for their licenses, model terms, and citation requirements.
 

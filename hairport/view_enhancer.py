@@ -25,8 +25,6 @@ import numpy as np
 import torch
 from PIL import Image
 
-from diffusers import Flux2KleinPipeline
-
 from hairport.core.bg_remover import BackgroundRemover
 from hairport.config import get_config
 from hairport.runtime import can_reuse_artifact, write_provenance
@@ -47,9 +45,10 @@ BG_COLOR = (255, 255, 255)
 # ============================================================================
 
 def flush_gpu_memory():
-    """Clear GPU memory cache."""
-    gc.collect()
-    torch.cuda.empty_cache()
+    """Clear GPU memory cache (thin alias for :func:`hairport.memory.flush`)."""
+    from hairport import memory
+
+    memory.flush()
 
 
 def apply_white_background(image: Image.Image, mask: Image.Image = None) -> Image.Image:
@@ -369,12 +368,18 @@ class ViewEnhancer:
     
     def load_pipeline(self):
         """Load the FLUX.2 Klein pipeline and background remover."""
+        # Imported lazily: keeps the module importable (contract tests, docs)
+        # on diffusers versions that predate FLUX.2 Klein.
+        from diffusers import Flux2KleinPipeline
+
+        from hairport import memory
+
         self.pipe = Flux2KleinPipeline.from_pretrained(
             self.model_id,
             revision=get_config().models.flux_klein_revision,
             torch_dtype=self.dtype,
         )
-        self.pipe.to(self.device)
+        memory.apply_offload_mode(self.pipe, memory.flux_offload_mode(), self.device)
         
         # Initialize background remover
         self.bg_remover = BackgroundRemover(device=self.device)

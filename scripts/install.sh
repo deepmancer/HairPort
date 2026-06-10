@@ -97,7 +97,7 @@ pip install -e "${PACKAGES_DIR}/easy_dwpose"
 # ── BEN2, rembg, mediapipe ────────────────────────────────────────
 pip install git+https://github.com/PramaLLC/BEN2.git "rembg[gpu]" numpy==1.26.4
 
-# ── Chumpy (for SHeaP) ───────────────────────────────────────────────
+# ── Chumpy (for FLAME/SMPL .pkl loading in PEAR) ──────────────────────
 pip install chumpy --no-build-isolation                                                           
 
 # ── Jupyter ────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ pip install omegaconf
 # ── Pin numpy last (some packages may override it) ────────────────
 pip install numpy==1.26.4
 
-# ── Setup submodules (CodeFormer, MV-Adapter, SHeaP) ────
+# ── Setup submodules (CodeFormer, MV-Adapter, PEAR) ────
 # bash "${SCRIPT_DIR}/setup_submodules.sh"
 
 # ── Install HairPort itself ───────────────────────────────────────

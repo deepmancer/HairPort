@@ -21,8 +21,12 @@ packaging
 tqdm
 
 # Diffusion / model ecosystem
-diffusers
-transformers
+# Floors are functional minimums, not style choices:
+#   diffusers>=0.37    — first release with Flux2KleinPipeline (enhance/transfer stages)
+#   transformers>=5.0  — first release with Sam3Model/Sam3Processor (bald converter w_seg)
+# Verified working: diffusers 0.38.0, transformers 5.10.2
+diffusers>=0.37
+transformers>=5.0
 peft
 huggingface_hub
 sentence-transformers
@@ -31,11 +35,16 @@ sentence-transformers
 Pillow
 numpy==1.26.4
 scipy
-opencv-python
+# opencv-contrib (ximgproc.guidedFilter) for the bald-converter VFX matte.
+# Install one OpenCV build only — contrib supersedes opencv-python.
+opencv-contrib-python
 scikit-image
 mediapipe==0.10.20
 trimesh
 pyrender
+# pyrender pins PyOpenGL==3.1.0, whose EGL path is broken; after installing,
+# force-upgrade (safe despite the resolver warning):
+#   pip install "PyOpenGL>=3.1.7"
 embreex
 rtree
 roma
@@ -67,10 +76,20 @@ tensorboard
 onnxruntime-gpu
 requests
 PyYAML
-chumpy
+# chumpy: needed to unpickle FLAME/SMPL .pkl parametric models, but its legacy
+# setup.py fails under PEP-517 build isolation. Install separately:
+#   pip install chumpy --no-build-isolation
 albumentations
 einops
 typing_extensions
+
+# Head/body fitting backend (PEAR EHM — see hairport/fitting/, modules/PEAR).
+# ultralytics is AGPL-3.0 licensed (YOLOv8 person detector).
+ultralytics
+lightning
+kornia
+smplx
+colored
 
 # CUDA-heavy geometry deps used by setup/install scripts
 fvcore

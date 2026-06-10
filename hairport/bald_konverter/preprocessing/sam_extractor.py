@@ -23,10 +23,12 @@ class SAMMaskExtractor:
     ----------
     model_id : str
         Hugging Face model ID (default ``facebook/sam3``).
-    confidence_threshold : float
-        Threshold applied to mask logits.
-    detection_threshold : float
-        Object detection confidence threshold.
+    confidence_threshold : float, optional
+        Threshold applied to mask logits.  Defaults to
+        :data:`~..config.defaults.SAM_CONFIDENCE_THRESHOLD`.
+    detection_threshold : float, optional
+        Object detection confidence threshold.  Defaults to
+        :data:`~..config.defaults.SAM_DETECTION_THRESHOLD`.
     device : str
         Compute device.
     """
@@ -34,8 +36,8 @@ class SAMMaskExtractor:
     def __init__(
         self,
         model_id: str | None = None,
-        confidence_threshold: float = 0.35,
-        detection_threshold: float = 0.4,
+        confidence_threshold: float | None = None,
+        detection_threshold: float | None = None,
         device: str = "cuda",
         revision: str | None = None,
     ):
@@ -47,8 +49,10 @@ class SAMMaskExtractor:
         revision = (
             revision if revision is not None else cfg.models.sam_bald_konverter_revision
         )
-        confidence_threshold = confidence_threshold if confidence_threshold != 0.35 else SAM_CONFIDENCE_THRESHOLD
-        detection_threshold = detection_threshold if detection_threshold != 0.4 else SAM_DETECTION_THRESHOLD
+        if confidence_threshold is None:
+            confidence_threshold = SAM_CONFIDENCE_THRESHOLD
+        if detection_threshold is None:
+            detection_threshold = SAM_DETECTION_THRESHOLD
         from transformers import Sam3Model, Sam3Processor
 
         self.confidence_threshold = confidence_threshold
@@ -142,6 +146,18 @@ class SAMMaskExtractor:
     # Lifecycle
     # ------------------------------------------------------------------ #
 
+    def to_device(self, device: str | torch.device | None = None) -> None:
+        """Move the model onto *device* (default: the configured device)."""
+        if hasattr(self, "_model"):
+            self._model.to(device if device is not None else self.device)
+
+    def offload(self) -> None:
+        """Park the model in CPU RAM (no-op under ``resident`` policy)."""
+        from hairport import memory
+
+        if hasattr(self, "_model"):
+            memory.offload(self._model)
+
     def teardown(self) -> None:
         if hasattr(self, "_model"):
             del self._model
@@ -150,4 +166,7 @@ class SAMMaskExtractor:
         torch.cuda.empty_cache()
 
     def __del__(self) -> None:
-        self.teardown()
+        try:
+            self.teardown()
+        except Exception:
+            pass  # interpreter shutdown: torch/cuda may already be gone

@@ -30,13 +30,16 @@ from hairport.utility.warper import (
     align_images_for_min_lmk_diff,
     transform_image_and_mask,
 )
-from hairport.core import BackgroundRemover, SAMMaskExtractor, CodeFormerEnhancer, FacialLandmarkDetector, FLAMEFitter
+from hairport.core import BackgroundRemover, SAMMaskExtractor, CodeFormerEnhancer, FacialLandmarkDetector
+from hairport.fitting import FittingBackend, get_fitting_backend
 from hairport.config import get_config
 from hairport.data import DatasetManager
 
 def flush():
-    gc.collect()
-    torch.cuda.empty_cache()
+    """Thin alias for :func:`hairport.memory.flush`."""
+    from hairport import memory
+
+    memory.flush()
 
 
 def validate_landmarks_data(lmk_data: dict, lmk_path: Path, context: str = "landmarks") -> None:
@@ -438,22 +441,22 @@ def requires_3d_lifting(folder_path: Path, bald_version: str) -> bool:
 def get_or_compute_flame_segmentation(
     image: Union[np.ndarray, Image.Image, str, Path],
     output_dir: Path,
-    flame_fitter: 'FLAMEFitter',
+    backend: 'FittingBackend',
     precomputed_path: Optional[Path] = None,
     config: BlendingConfig = None,
     force_recompute: bool = False,
 ) -> Optional[np.ndarray]:
-    """Get FLAME segmentation from precomputed path or compute using FLAMEFitter.
-    
+    """Get the head segmentation from a precomputed path or the fitting backend.
+
     Args:
         image: Input image (numpy array, PIL Image, or path).
         output_dir: Directory to save computed segmentation.
-        flame_fitter: FLAMEFitter instance.
+        backend: A :class:`hairport.fitting.FittingBackend` (e.g. PEAR).
         precomputed_path: Optional path to precomputed segmentation.
         config: BlendingConfig instance.
-    
+
     Returns:
-        FLAME segmentation mask as numpy array, or None if computation fails.
+        Head segmentation mask as numpy array, or None if computation fails.
     """
     if config is None:
         config = BlendingConfig()
@@ -477,8 +480,8 @@ def get_or_compute_flame_segmentation(
         except Exception as e:
             print(f"Warning: Failed to load existing FLAME segmentation: {e}")
     
-    # Compute FLAME segmentation using FLAMEFitter
-    print(f"Computing FLAME segmentation...")
+    # Compute head segmentation using the fitting backend
+    print(f"Computing head segmentation...")
     try:
         # Load image if it's a path
         if isinstance(image, (str, Path)):
@@ -487,34 +490,34 @@ def get_or_compute_flame_segmentation(
             image_array = np.array(image.convert('RGB'))
         else:
             image_array = image
-        
-        result = flame_fitter.fit_flame(image_array)
-        
-        if result is None:
-            print("Warning: FLAME fitting failed (no face detected or fitting error)")
+
+        fit = backend.fit(image_array)
+        flame_mask = fit.head_mask
+        if flame_mask is None:
+            print("Warning: head fitting failed (no head mask produced)")
             return None
-        
-        flame_mask, result_dict = result
-        
+
         # Ensure output directory exists
         output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save FLAME segmentation
+
+        # Save head segmentation
         Image.fromarray(flame_mask).save(output_seg_path)
-        print(f"Saved FLAME segmentation to: {output_seg_path}")
-        
+        print(f"Saved head segmentation to: {output_seg_path}")
+
         # Save overlay image
-        overlay = flame_fitter.create_overlay(image_array, flame_mask, alpha=0.4)
+        overlay = image_array.copy()
+        m = flame_mask > 0
+        overlay[m] = (0.6 * overlay[m] + 0.4 * np.array([40, 255, 40])).astype(np.uint8)
         overlay_path = output_dir / config.FILE_FLAME_OVERLAY
         Image.fromarray(overlay).save(overlay_path)
-        print(f"Saved FLAME overlay to: {overlay_path}")
-        
+        print(f"Saved head overlay to: {overlay_path}")
+
         # Save head orientation
         orientation_path = output_dir / config.FILE_HEAD_ORIENTATION
         with open(orientation_path, 'w') as f:
-            json.dump(result_dict['head_orientation'], f, indent=2)
+            json.dump(fit.head_orientation, f, indent=2)
         print(f"Saved head orientation to: {orientation_path}")
-        
+
         return flame_mask
         
     except Exception as e:
@@ -1146,7 +1149,7 @@ def process_view_aligned_folder(
     bg_remover: BackgroundRemover = None,
     landmark_detector: FacialLandmarkDetector = None,
     sam_extractor: SAMMaskExtractor = None,
-    flame_fitter: FLAMEFitter = None,
+    backend: FittingBackend = None,
     force_recompute: bool = False,
 ) -> bool:
     if config is None:
@@ -1187,9 +1190,9 @@ def process_view_aligned_folder(
         sam_extractor = SAMMaskExtractor(confidence_threshold=config.SAM_CONFIDENCE_THRESHOLD)
         should_cleanup = True
     
-    if flame_fitter is None:
-        print("Initializing FLAMEFitter...")
-        flame_fitter = FLAMEFitter()
+    if backend is None:
+        print("Initializing fitting backend...")
+        backend = get_fitting_backend()
         should_cleanup = True
 
     # Check if source outpainted image exists
@@ -1302,12 +1305,13 @@ def process_view_aligned_folder(
                         continue
             else:
                 # Load original target image directly
-                dataset_name = data_dir.name.lower()
-                if dataset_name == "celeba_reduced":
-                    image_folder = "image_outpainted"
-                else:
-                    image_folder = "image"
-                    
+                from hairport.config import get_config
+                from hairport.data import resolve_unaware_target_folder
+
+                image_folder = resolve_unaware_target_folder(
+                    data_dir, get_config().blend_hair.target_image_folder
+                )
+
                 original_target_path = data_dir / image_folder / f"{target_id}.png"
                 if not original_target_path.exists():
                     print(f"Warning: Original target image not found at {original_target_path}, skipping {mode}")
@@ -1446,7 +1450,7 @@ def process_view_aligned_folder(
                     source_flame_mask = get_or_compute_flame_segmentation(
                         image=source_data['image'],
                         output_dir=source_outpainted_dir,
-                        flame_fitter=flame_fitter,
+                        backend=backend,
                         precomputed_path=None,  # Always compute for source outpainted
                         config=config,
                         force_recompute=force_recompute,
@@ -1475,18 +1479,18 @@ def process_view_aligned_folder(
                             target_flame_mask = get_or_compute_flame_segmentation(
                                 image=target_data['image'],
                                 output_dir=alignment_dir,
-                                flame_fitter=flame_fitter,
+                                backend=backend,
                                 precomputed_path=None,  # Compute for view-aligned target
                                 config=config,
                                 force_recompute=force_recompute,
                             )
                         else:
-                            # For 3D unaware: compute FLAME segmentation directly via FLAMEFitter
+                            # For 3D unaware: compute head segmentation directly via the fitting backend
                             target_flame_output_dir = data_dir / f"{image_folder}_flame_output" / target_id
                             target_flame_mask = get_or_compute_flame_segmentation(
                                 image=target_data['image'],
                                 output_dir=target_flame_output_dir,
-                                flame_fitter=flame_fitter,
+                                backend=backend,
                                 precomputed_path=None,
                                 config=config,
                                 force_recompute=force_recompute,
@@ -1667,7 +1671,7 @@ if __name__ == "__main__":
         min_detection_confidence=0.5
     )
     sam_extractor = SAMMaskExtractor(confidence_threshold=config.SAM_CONFIDENCE_THRESHOLD)
-    flame_fitter = FLAMEFitter()
+    backend = get_fitting_backend()
     print("Models initialized.\n")
     
     try:
@@ -1688,7 +1692,7 @@ if __name__ == "__main__":
                     bg_remover=bg_remover,
                     landmark_detector=landmark_detector,
                     sam_extractor=sam_extractor,
-                    flame_fitter=flame_fitter,
+                    backend=backend,
                 )
                 
                 if result:

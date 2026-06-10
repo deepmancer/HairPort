@@ -1,0 +1,3 @@
+[submodule "modules/PEAR"]
+	path = modules/PEAR
+	url = https://github.com/Pixel-Talk/PEAR

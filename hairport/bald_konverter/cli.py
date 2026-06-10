@@ -2,17 +2,9 @@
 
 Usage::
 
-    # Single image
-    bald-konverter --input photo.jpg --output bald.png
-
-    # Batch processing
-    bald-konverter --input-dir ./faces/ --output-dir ./bald/
-
-    # Fast mode (no segmentation)
-    bald-konverter --input photo.jpg --output bald.png --mode wo_seg
-
-    # With FLAME fitting
-    bald-konverter --input photo.jpg --output bald.png --use-flame --flame-dir assets/base_models/flame
+    bald-konverter --input photo.jpg --output bald.png          # w_seg/auto run the SMPL-X fit
+    bald-konverter --input-dir ./faces/ --output-dir ./bald/    # batch
+    bald-konverter --input photo.jpg --output bald.png --mode wo_seg   # fast, no fit
 """
 
 from __future__ import annotations
@@ -68,7 +60,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--guidance-scale", type=float, default=1.0,
-        help="Guidance scale (default: 1.0).",
+        help="Embedded guidance scale (default: 1.0, matching LoRA training).",
     )
     parser.add_argument(
         "--strength", type=float, default=1.0,
@@ -79,14 +71,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--save-intermediates", action="store_true",
         help="Save intermediate masks and FLUX inputs alongside the output.",
-    )
-    parser.add_argument(
-        "--use-flame", action="store_true",
-        help="Use SHeaP FLAME fitting for head segmentation (requires bald-konverter[flame]).",
-    )
-    parser.add_argument(
-        "--flame-dir", type=str, default=None,
-        help="Path to FLAME base-model root directory (expects parametric_models/ and vertex_mappings/).",
     )
     parser.add_argument(
         "--device", type=str, default="cuda",
@@ -103,23 +87,58 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}
 
 
+def _save_head_fit(result, stem: str, out_dir: Path) -> None:
+    """Persist the fitted head model (independent of --save-intermediates)."""
+    if result.head_fit is not None:
+        result.head_fit.save(out_dir / f"{stem}_head_fit.pt")
+
+
 def _save_intermediates(result, stem: str, out_dir: Path) -> None:
-    """Save masks and FLUX input alongside the bald image."""
+    """Save all intermediates (plate, bald plate, alpha, masks, FLUX grids,
+    framing JSON, SMPL-X fit) + a ``{stem}_manifest.json`` to reconstruct the edit."""
+    import json
     import numpy as np
     from PIL import Image
 
-    if result.hair_mask is not None:
-        Image.fromarray(result.hair_mask).save(out_dir / f"{stem}_hair_mask.png")
-    if result.body_mask is not None:
-        Image.fromarray(result.body_mask).save(out_dir / f"{stem}_body_mask.png")
-    if result.flux_input_wo_seg is not None:
-        result.flux_input_wo_seg.save(out_dir / f"{stem}_flux_input_wo_seg.png")
-    if result.flux_input_w_seg is not None:
-        result.flux_input_w_seg.save(out_dir / f"{stem}_flux_input_w_seg.png")
-    if result.foreground is not None:
-        result.foreground.save(out_dir / f"{stem}_foreground.png")
-    if result.flame_mask is not None:
-        Image.fromarray(result.flame_mask).save(out_dir / f"{stem}_flame_mask.png")
+    written: dict[str, str] = {}
+
+    def _save_img(arr_or_img, suffix: str):
+        if arr_or_img is None:
+            return
+        name = f"{stem}_{suffix}"
+        if isinstance(arr_or_img, np.ndarray):
+            Image.fromarray(arr_or_img).save(out_dir / f"{name}.png")
+        else:
+            arr_or_img.save(out_dir / f"{name}.png")
+        written[suffix] = f"{name}.png"
+
+    _save_img(result.plate, "plate")
+    _save_img(result.bald_plate, "bald_plate")
+    _save_img(result.change_alpha, "alpha")
+    _save_img(result.bald_image_wo_seg, "bald_wo_seg")
+    _save_img(result.hair_mask, "hair_mask")
+    _save_img(result.body_mask, "body_mask")
+    _save_img(result.head_mask, "head_mask")
+    _save_img(result.smplx_body_mask, "smplx_body_mask")
+    _save_img(result.flux_input_wo_seg, "flux_input_wo_seg")
+    _save_img(result.flux_input_w_seg, "flux_input_w_seg")
+    _save_img(result.foreground, "foreground")
+
+    if result.framing is not None:
+        result.framing.to_json(out_dir / f"{stem}_framing.json")
+        written["framing"] = f"{stem}_framing.json"
+    # head_fit (.pt) is written by _save_head_fit (always, before this call).
+    if result.head_fit is not None:
+        written["head_fit"] = f"{stem}_head_fit.pt"
+
+    manifest = {
+        "stem": stem,
+        "output": f"{stem}.png",
+        "comp_params": result.comp_params,
+        "framing": result.framing.to_dict() if result.framing is not None else None,
+        "artifacts": written,
+    }
+    (out_dir / f"{stem}_manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -136,8 +155,6 @@ def main(argv: list[str] | None = None) -> None:
     pipeline = BaldKonverterPipeline(
         mode=args.mode,
         device=args.device,
-        use_flame=args.use_flame,
-        flame_dir=args.flame_dir,
     )
 
     # ---- Single image -------------------------------------------------------
@@ -166,6 +183,7 @@ def main(argv: list[str] | None = None) -> None:
         result.bald_image.save(output_path)
         logger.info("Saved %s", output_path)
 
+        _save_head_fit(result, input_path.stem, output_path.parent)
         if args.save_intermediates:
             _save_intermediates(result, input_path.stem, output_path.parent)
 
@@ -211,6 +229,7 @@ def main(argv: list[str] | None = None) -> None:
                 )
                 result.bald_image.save(out_path)
 
+                _save_head_fit(result, img_path.stem, output_dir)
                 if args.save_intermediates:
                     _save_intermediates(result, img_path.stem, output_dir)
 

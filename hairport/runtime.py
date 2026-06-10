@@ -120,7 +120,7 @@ def _code_revisions() -> dict[str, Any]:
 
     modules = {
         name: revision(repo_root / "modules" / name)
-        for name in ("CodeFormer", "MV-Adapter", "SHeaP")
+        for name in ("CodeFormer", "MV-Adapter", "PEAR")
     }
     dirty = None
     try:

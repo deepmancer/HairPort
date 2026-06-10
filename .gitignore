@@ -213,11 +213,21 @@ __marimo__/
 # Downloaded model weights and large assets
 assets/checkpoints/
 
-# External submodule clones (use scripts/setup_submodules.sh)
-modules/
+# License-bound FLAME/SMPL-X data fetched by scripts/download_assets.py.
+# (The few small files tracked in-repo under these paths remain tracked;
+# gitignore only prevents accidentally committing the downloaded bundle.)
+assets/base_models/
+assets/landmarks/
+
+# External module clones (use scripts/setup_submodules.sh). PEAR is a tracked
+# git submodule; everything else under modules/ is ignored.
+modules/*
+!modules/PEAR
 
 # Pipeline outputs
 outputs/
+outputs_samples/
+*_outputs/
 
 # Weights / large binaries
 *.pt

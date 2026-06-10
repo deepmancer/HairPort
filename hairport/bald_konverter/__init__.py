@@ -13,6 +13,7 @@ For lower-level control, use the model classes directly::
     from hairport.bald_konverter import BaldKonverter, BaldKonverterWithSeg
 """
 
+from hairport.fitting import BodyFitResult
 from .models.konverter import BaldKonverter, BaldKonverterWithSeg
 from .pipeline import BaldKonverterPipeline, BaldResult
 
@@ -23,5 +24,6 @@ __all__ = [
     "BaldKonverterPipeline",
     "BaldKonverterWithSeg",
     "BaldResult",
+    "BodyFitResult",
     "__version__",
 ]

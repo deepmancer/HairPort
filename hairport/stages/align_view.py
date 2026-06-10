@@ -286,6 +286,13 @@ class AlignViewStage:
                 f"{details}"
             )
 
+    def unload(self):
+        """Stage-API symmetry: models are scoped to run() (the SDXL uncropper
+        is already released after Phase 1); this only flushes leftover cache."""
+        from hairport import memory
+
+        memory.flush()
+
 
 def main(argv: list[str] | None = None):
     """CLI entry point."""

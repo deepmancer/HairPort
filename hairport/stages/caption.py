@@ -85,6 +85,16 @@ class CaptionStage:
         self._captioner = CaptionerPipeline(dtype=self.dtype, device_map=self.device)
         logger.info("Qwen captioner pipeline loaded")
 
+    def _release_captioner(self):
+        """Free the Qwen3-VL captioner so it never co-resides with Qwen-Edit."""
+        from hairport import memory
+
+        if self._captioner is not None:
+            del self._captioner
+            self._captioner = None
+            memory.flush()
+            logger.info("Qwen captioner released")
+
     def run(
         self,
         data_dir: str | Path,
@@ -131,7 +141,13 @@ class CaptionStage:
             logger.info(f"Caption complete: {summary.to_dict()}")
             return summary
 
+        from hairport import memory
         from hairport.utility.uncrop_qwen import prepare_image_and_mask
+
+        # The captioning phase is finished — under the exclusive policy the
+        # Qwen3-VL captioner must not co-reside with the Qwen-Edit pipeline.
+        if memory.exclusive_enabled():
+            self._release_captioner()
 
         self._ensure_pipeline()
         cfg = get_config()

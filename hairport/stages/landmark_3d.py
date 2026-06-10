@@ -244,7 +244,7 @@ class Landmark3DStage:
 
     @staticmethod
     def _load_head_orientation(data_dir: Path, identity_id: str) -> list[float]:
-        from hairport.core.flame_fitting import compute_head_orientation
+        from hairport.fitting.orientation import compute_head_orientation
 
         image_path = data_dir / "image" / f"{identity_id}.png"
         if not image_path.exists():

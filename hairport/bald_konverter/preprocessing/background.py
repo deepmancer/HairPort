@@ -85,6 +85,18 @@ class BackgroundRemover:
     # Lifecycle
     # ------------------------------------------------------------------ #
 
+    def to_device(self, device: str | torch.device | None = None) -> None:
+        """Move the model onto *device* (default: the configured device)."""
+        if hasattr(self, "_model"):
+            self._model.to(device if device is not None else self.device)
+
+    def offload(self) -> None:
+        """Park the model in CPU RAM (no-op under ``resident`` policy)."""
+        from hairport import memory
+
+        if hasattr(self, "_model"):
+            memory.offload(self._model)
+
     def teardown(self) -> None:
         """Free GPU memory held by the model."""
         if hasattr(self, "_model"):
@@ -92,4 +104,7 @@ class BackgroundRemover:
         torch.cuda.empty_cache()
 
     def __del__(self) -> None:
-        self.teardown()
+        try:
+            self.teardown()
+        except Exception:
+            pass  # interpreter shutdown: torch/cuda may already be gone

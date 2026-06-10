@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hairport"
+version = "0.1.0"
+description = "HairPort: 3D-aware hairstyle transfer (SIGGRAPH 2026) — pipeline + Bald Converter"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "CC-BY-NC-ND-4.0" }
+authors = [{ name = "Alireza Heidari" }]
+# Heavy, pinned runtime dependencies (CUDA wheels, git packages) are managed in
+# requirements.txt — install with:  pip install -r requirements.txt
+dependencies = []
+
+[project.scripts]
+bald-konverter = "hairport.bald_konverter.cli:main"
+
+[project.urls]
+Homepage = "https://deepmancer.github.io/HairPort/"
+"Bald Converter weights" = "https://huggingface.co/deepmancer/bald_konverter"
+
+[tool.setuptools.packages.find]
+include = ["hairport*"]

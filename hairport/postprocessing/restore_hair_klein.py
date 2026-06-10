@@ -258,9 +258,25 @@ class UncropperSingleton:
             cls._uncropper = Uncropper(config)
             cls._uncropper.load_pipeline()
             print("[UncropperSingleton] SDXL Uncropper initialized")
-        
+
         return cls._uncropper
-    
+
+    @classmethod
+    def onload(cls):
+        """Bring the SDXL pipe back to its device before an uncrop window."""
+        from hairport import memory
+
+        if cls._uncropper is not None:
+            memory.move_to(cls._uncropper.pipe, cls._uncropper._device)
+
+    @classmethod
+    def offload(cls):
+        """Park the SDXL pipe in CPU RAM (geometric .crop() keeps working)."""
+        from hairport import memory
+
+        if cls._uncropper is not None:
+            memory.offload(cls._uncropper.pipe)
+
     @classmethod
     def release(cls):
         if cls._uncropper is not None:
@@ -561,13 +577,15 @@ class HairTransferKleinPipeline:
         self._load_models()
     
     def _load_models(self):
+        from hairport import memory
+
         print(f"Loading FLUX.2 Klein from {self.config.FLUX_KLEIN_MODEL}...")
         self.pipe = Flux2KleinPipeline.from_pretrained(
             self.config.FLUX_KLEIN_MODEL,
             revision=get_config().models.flux_klein_revision,
             torch_dtype=self.dtype,
         )
-        self.pipe.to(self.device)
+        memory.apply_offload_mode(self.pipe, memory.flux_offload_mode(), self.device)
         BackgroundRemoverSingleton.get_instance(device=self.device)
         
         print("Pipeline initialized successfully!")
@@ -639,13 +657,20 @@ class HairTransferKleinPipeline:
             
             if needs_uncrop:
                 print("  Uncropping source bald image using SDXL...")
+                from hairport import memory
+
+                # Exclusive policy: Klein and the SDXL uncropper must not
+                # co-reside on GPU — park Klein during the uncrop window.
+                memory.offload(self.pipe)
                 uncropper = UncropperSingleton.get_uncropper()
-                
+                UncropperSingleton.onload()
+
                 uncropped_bald, resize_info = uncropper.uncrop(
                     source_bald_image,
                     prompt=self.config.UNCROP_PROMPT,
                     resize_percentage=self.config.UNCROP_RESIZE_PERCENTAGE,
                 )
+                UncropperSingleton.offload()
                 source_bald_image = uncropped_bald
                 print(f"    Uncropped bald: resize={self.config.UNCROP_RESIZE_PERCENTAGE}%, "
                       f"margin=({resize_info['margin_x']}, {resize_info['margin_y']}), "
@@ -693,6 +718,9 @@ class HairTransferKleinPipeline:
                 print(f"  Saved debug: {debug_path}")
         
         print("  Running FLUX.2 Klein inference...")
+        from hairport import memory
+
+        memory.move_to(self.pipe, self.device)  # back from any uncrop window
         result = self.pipe(
             prompt=prompt,
             image=image_list,

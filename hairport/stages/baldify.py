@@ -1,18 +1,4 @@
-"""Stage 1 — Baldify: Generate bald versions of portrait images.
-
-Delegates to ``bald_konverter.pipeline.BaldKonverterPipeline``.
-
-Usage::
-
-    # Programmatic
-    from hairport.stages.baldify import BaldifyStage
-    stage = BaldifyStage()
-    stage.run(data_dir="outputs")                          # pipeline mode
-    stage.run(input_path="photo.png", output_path="bald.png")  # single image
-
-    # CLI
-    python -m hairport.stages.baldify --data_dir outputs
-"""
+"""Stage 1 — Baldify: bald portraits via ``BaldKonverterPipeline``."""
 
 from __future__ import annotations
 
@@ -37,27 +23,14 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
 
 
 class BaldifyStage:
-    """Generate bald portraits using bald_konverter.
-
-    Parameters
-    ----------
-    mode : str
-        Conversion mode: ``"auto"``, ``"wo_seg"``, or ``"w_seg"``.
-    device : str
-        Compute device.
-    use_flame : bool
-        Whether to use SHeaP FLAME fitting for head segmentation.
-    flame_dir : str | Path | None
-        Optional FLAME base-model root override (expects
-        ``parametric_models/`` and ``vertex_mappings/``).
-    """
+    """Generate bald portraits. ``mode``: ``auto``/``wo_seg``/``w_seg``;
+    ``persist_intermediates`` defaults to ``cfg.baldify.persist_intermediates``."""
 
     def __init__(
         self,
         mode: str | None = None,
         device: str | None = None,
-        use_flame: bool = False,
-        flame_dir: str | Path | None = None,
+        persist_intermediates: bool | None = None,
     ):
         cfg = get_config()
         self.mode = mode if mode is not None else cfg.baldify.mode
@@ -65,8 +38,10 @@ class BaldifyStage:
         self.device = device if device is not None else cfg.device
         if not torch.cuda.is_available() and "cuda" in str(self.device):
             self.device = "cpu"
-        self.use_flame = use_flame
-        self.flame_dir = flame_dir
+        self.persist_intermediates = (
+            persist_intermediates if persist_intermediates is not None
+            else bool(cfg.baldify.persist_intermediates)
+        )
         self._pipeline = None
 
     def _resolve_mode(self, bald_version: str) -> str:
@@ -89,9 +64,56 @@ class BaldifyStage:
             self._pipeline = BaldKonverterPipeline(
                 mode=self.mode,
                 device=self.device,
-                use_flame=self.use_flame,
-                flame_dir=self.flame_dir,
             )
+
+    @staticmethod
+    def _persist_artifacts(result, path_for) -> None:
+        """Write every populated intermediate + a manifest. ``path_for(kind, ext)``
+        resolves each destination."""
+        import json
+        import numpy as np
+        from PIL import Image
+
+        written: dict[str, str] = {}
+
+        def _img(obj, kind):
+            if obj is None:
+                return
+            p = path_for(kind, "png")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            (Image.fromarray(obj) if isinstance(obj, np.ndarray) else obj).save(p)
+            written[kind] = p.name
+
+        _img(result.plate, "plate")
+        _img(result.bald_plate, "bald_plate")
+        _img(result.change_alpha, "alpha")
+        _img(result.bald_image_wo_seg, "bald_wo_seg")
+        _img(result.hair_mask, "mask_hair")
+        _img(result.body_mask, "mask_body")
+        _img(result.head_mask, "mask_head")
+        _img(result.smplx_body_mask, "mask_smplx")
+        _img(result.flux_input_wo_seg, "flux_input")
+        _img(result.flux_input_w_seg, "flux_input_w_seg")
+        _img(result.foreground, "foreground")
+
+        if result.framing is not None:
+            p = path_for("framing", "json")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            result.framing.to_json(p)
+            written["framing"] = p.name
+        if result.head_fit is not None:
+            p = path_for("head_fit", "pt")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            result.head_fit.save(p)
+            written["head_fit"] = p.name
+
+        man = path_for("manifest", "json")
+        man.parent.mkdir(parents=True, exist_ok=True)
+        man.write_text(json.dumps({
+            "comp_params": result.comp_params,
+            "framing": result.framing.to_dict() if result.framing is not None else None,
+            "artifacts": written,
+        }, indent=2, default=str))
 
     def run(
         self,
@@ -106,20 +128,8 @@ class BaldifyStage:
         guidance_scale: float | None = None,
         strength: float | None = None,
     ) -> StageSummary:
-        """Run baldification.
-
-        Supports three invocation modes:
-
-        1. **data_dir** (pipeline mode): reads from ``<data_dir>/image/``
-           and writes to ``<data_dir>/bald/<bald_version>/image/``.
-        2. **input_dir / output_dir** (explicit batch).
-        3. **input_path / output_path** (single image).
-
-        Returns
-        -------
-        StageSummary
-            Uniform processing summary and per-image failures.
-        """
+        """Run baldification via ``data_dir`` (pipeline), ``input_dir``/``output_dir``
+        (batch), or ``input_path``/``output_path`` (single). Returns a StageSummary."""
         cfg = get_config()
         if bald_version is None:
             bald_version = cfg.pipeline.bald_version
@@ -153,15 +163,14 @@ class BaldifyStage:
                     image=input_path, seed=item_seed, refine_seed=refine_seed,
                     num_inference_steps=num_inference_steps,
                     guidance_scale=guidance_scale, strength=strength,
+                    return_intermediates=self.persist_intermediates,
                 )
                 result.bald_image.save(output_path)
-                if result.flux_input_wo_seg is not None:
-                    result.flux_input_wo_seg.save(
-                        output_path.parent / f"{input_path.stem}_flux_input_wo_seg.png"
-                    )
-                if result.flux_input_w_seg is not None:
-                    result.flux_input_w_seg.save(
-                        output_path.parent / f"{input_path.stem}_flux_input_w_seg.png"
+                if self.persist_intermediates:
+                    stem = input_path.stem
+                    self._persist_artifacts(
+                        result,
+                        lambda kind, ext="png": output_path.parent / f"{stem}_{kind}.{ext}",
                     )
                 write_provenance(output_path, provenance)
                 summary.completed = 1
@@ -194,22 +203,16 @@ class BaldifyStage:
             resolved_mode = self._resolve_mode(bv)
             self._ensure_pipeline(resolved_mode)
 
+            dm_for_outputs = None
             if data_dir_for_outputs is not None:
                 version_output_dir = data_dir_for_outputs / "bald" / bv / "image"
-                flux_input_wo_seg_dir = data_dir_for_outputs / "bald" / "wo_seg" / "flux_input"
-                flux_input_w_seg_dir = data_dir_for_outputs / "bald" / "w_seg" / "flux_input"
+                dm_for_outputs = DatasetManager(data_dir_for_outputs)
             else:
                 if output_dir is not None and len(bald_versions) > 1:
                     raise ValueError("bald_version='all' requires data_dir or per-version output directories")
                 version_output_dir = Path(output_dir) if output_dir is not None else input_dir.parent / f"{input_dir.name}_bald"
-                flux_input_wo_seg_dir = None
-                flux_input_w_seg_dir = None
 
             version_output_dir.mkdir(parents=True, exist_ok=True)
-            if flux_input_wo_seg_dir is not None:
-                flux_input_wo_seg_dir.mkdir(parents=True, exist_ok=True)
-            if flux_input_w_seg_dir is not None:
-                flux_input_w_seg_dir.mkdir(parents=True, exist_ok=True)
 
             for img_path in images:
                 summary.attempted += 1
@@ -229,16 +232,22 @@ class BaldifyStage:
                         image=img_path, seed=item_seed, refine_seed=refine_seed,
                         num_inference_steps=num_inference_steps,
                         guidance_scale=guidance_scale, strength=strength,
+                        return_intermediates=self.persist_intermediates,
                     )
                     result.bald_image.save(out_path)
-                    if flux_input_wo_seg_dir is not None and result.flux_input_wo_seg is not None:
-                        result.flux_input_wo_seg.save(
-                            flux_input_wo_seg_dir / f"{img_path.stem}.png"
-                        )
-                    if flux_input_w_seg_dir is not None and result.flux_input_w_seg is not None:
-                        result.flux_input_w_seg.save(
-                            flux_input_w_seg_dir / f"{img_path.stem}.png"
-                        )
+                    if self.persist_intermediates:
+                        stem = img_path.stem
+                        if dm_for_outputs is not None:
+                            path_for = (
+                                lambda kind, ext="png", _s=stem, _bv=bv:
+                                dm_for_outputs.bald_artifact(_s, kind, _bv, ext)
+                            )
+                        else:
+                            path_for = (
+                                lambda kind, ext="png", _s=stem:
+                                version_output_dir / f"{_s}_{kind}.{ext}"
+                            )
+                        self._persist_artifacts(result, path_for)
                     write_provenance(out_path, provenance)
                     summary.completed += 1
                     summary.add_artifacts([out_path])
@@ -279,18 +288,12 @@ def main(argv: list[str] | None = None):
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--guidance-scale", type=float, default=None)
     parser.add_argument("--strength", type=float, default=None)
-    parser.add_argument("--use-flame", action="store_true")
-    parser.add_argument(
-        "--flame-dir", type=str, default=None,
-        help="FLAME base-model root override (expects parametric_models/ and vertex_mappings/).",
-    )
     add_config_args(parser)
     args = parser.parse_args(argv)
     load_config_from_args(args)
 
     stage = BaldifyStage(
         mode=args.mode, device=args.device,
-        use_flame=args.use_flame, flame_dir=args.flame_dir,
     )
     result = stage.run(
         data_dir=args.data_dir,

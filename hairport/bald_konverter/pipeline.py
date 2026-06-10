@@ -1,21 +1,9 @@
-"""End-to-end bald-conversion pipeline.
-
-Orchestrates preprocessing (hair/body masks), FLUX LoRA inference, and
-optional FLAME segmentation into a single callable.
-
-Usage::
-
-    from hairport.bald_konverter import BaldKonverterPipeline
-
-    pipeline = BaldKonverterPipeline(mode="auto")
-    result = pipeline("portrait.jpg")
-    result.bald_image.save("bald.png")
-"""
+"""End-to-end bald conversion: framing → FLUX wo_seg/w_seg on the plate → composite back."""
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
@@ -28,9 +16,10 @@ from .config.defaults import (
     DEFAULT_NUM_INFERENCE_STEPS,
     DEFAULT_SEED,
     DEFAULT_STRENGTH,
-    W_SEG_IMAGE_SIZE,
-    WO_SEG_IMAGE_SIZE,
 )
+from hairport.fitting import BodyFitResult
+from .framing import Framing, plan_framing
+from . import compositing
 from .utils.image import (
     create_body_green_image,
     create_combined_seg_image,
@@ -48,39 +37,25 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BaldResult:
-    """Output from :class:`BaldKonverterPipeline`.
-
-    Attributes
-    ----------
-    bald_image : PIL.Image.Image
-        The generated bald portrait.
-    bald_image_wo_seg : PIL.Image.Image | None
-        The intermediate wo_seg bald portrait (only in ``auto`` mode).
-    hair_mask : np.ndarray | None
-        Binary hair mask (only in ``w_seg`` / ``auto`` mode).
-    body_mask : np.ndarray | None
-        Binary body mask (only in ``w_seg`` / ``auto`` mode).
-    segmentation_map : np.ndarray | None
-        Segformer per-pixel labels (if ``return_intermediates=True``).
-    flux_input_wo_seg : PIL.Image.Image | None
-        The 2-panel (1536×768) image fed to FLUX for wo_seg generation.
-    flux_input_w_seg : PIL.Image.Image | None
-        The 4-panel (1024×1024) grid fed to FLUX for w_seg generation.
-    foreground : PIL.Image.Image | None
-        RGBA foreground (if ``return_intermediates=True``).
-    flame_mask : np.ndarray | None
-        FLAME head mask (if ``use_flame=True`` and ``return_intermediates=True``).
-    """
+    """Bald-conversion output. ``bald_image`` is full-res original-aspect (head
+    changed only); the rest are intermediates (populated when requested). Masks
+    are in original-frame coords; ``head_fit`` is the SMPL-X+FLAME fit."""
 
     bald_image: Image.Image
+    plate: Optional[np.ndarray] = None              # native square head plate
+    bald_plate: Optional[np.ndarray] = None         # model bald output, pre-composite
+    change_alpha: Optional[np.ndarray] = None       # compositing matte (plate coords)
     bald_image_wo_seg: Optional[Image.Image] = None
     hair_mask: Optional[np.ndarray] = None
     body_mask: Optional[np.ndarray] = None
-    segmentation_map: Optional[np.ndarray] = None
+    head_mask: Optional[np.ndarray] = None
+    smplx_body_mask: Optional[np.ndarray] = None
     flux_input_wo_seg: Optional[Image.Image] = None
     flux_input_w_seg: Optional[Image.Image] = None
     foreground: Optional[Image.Image] = None
-    flame_mask: Optional[np.ndarray] = None
+    framing: Optional[Framing] = None
+    comp_params: Optional[dict] = None
+    head_fit: Optional[BodyFitResult] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -89,43 +64,23 @@ class BaldResult:
 
 
 class BaldKonverterPipeline:
-    """High-level API for bald conversion.
-
-    Parameters
-    ----------
-    mode : ``"wo_seg"`` | ``"w_seg"`` | ``"auto"``
-        * ``wo_seg`` — fast 2-panel conversion (no preprocessing needed).
-        * ``w_seg`` — segmentation-guided 4-panel conversion (higher quality).
-        * ``auto`` — runs ``wo_seg`` first, then refines with ``w_seg``.
-    device : str
-        Compute device.
-    dtype : torch.dtype
-        Model precision.
-    use_flame : bool
-        If ``True``, use SHeaP FLAME fitting for the head mask (requires
-        ``pip install bald-konverter[flame]`` and the configured FLAME assets).
-    flame_dir : str | Path, optional
-        Optional override for the FLAME base-model root directory
-        (expects ``parametric_models/`` and ``vertex_mappings/``).
-    lora_path_wo_seg : str, optional
-        Custom LoRA path for the wo_seg model.
-    lora_path_w_seg : str, optional
-        Custom LoRA path for the w_seg model.
-    """
+    """Bald conversion. ``mode``: ``wo_seg`` (2-panel), ``w_seg`` (4-panel,
+    SMPL-X-guided), or ``auto`` (wo_seg then w_seg). ``w_seg``/``auto`` require
+    the fitting backend (``cfg.fitting.backend``, default PEAR)."""
 
     def __init__(
         self,
         mode: str = "auto",
         device: str = "cuda",
-        dtype: torch.dtype = torch.bfloat16,
-        use_flame: bool = False,
-        flame_dir: Optional[Union[str, Path]] = None,
+        dtype: torch.dtype | None = None,
         lora_path_wo_seg: Optional[str] = None,
         lora_path_w_seg: Optional[str] = None,
         base_model: str | None = None,
         base_model_revision: str | None = None,
         lora_repo: str | None = None,
         lora_revision: str | None = None,
+        wo_seg_image_size: int | None = None,
+        w_seg_image_size: int | None = None,
     ):
         from hairport.config import get_config
 
@@ -135,15 +90,23 @@ class BaldKonverterPipeline:
 
         self.mode = mode
         self.device = device
-        self.dtype = dtype
-        self.use_flame = use_flame
+        self.dtype = dtype if dtype is not None else getattr(torch, cfg.baldify.dtype)
+        self.wo_seg_image_size = (
+            wo_seg_image_size if wo_seg_image_size is not None
+            else cfg.baldify.wo_seg_image_size
+        )
+        self.w_seg_image_size = (
+            w_seg_image_size if w_seg_image_size is not None
+            else cfg.baldify.w_seg_image_size
+        )
+        self.framing_cfg = cfg.baldify.framing
+        self.compositing_cfg = cfg.baldify.compositing
 
         # ---- Lazy-loaded components ----------------------------------------
         self._pipe = None  # shared FluxInpaintPipeline
-        self._konverter_wo: Optional[object] = None
-        self._konverter_w: Optional[object] = None
         self._preproc: Optional[object] = None
-        self._flame: Optional[object] = None
+        self._backend: Optional[object] = None  # head-fitting backend
+        self._face_detector: Optional[object] = None  # framing face bbox
 
         self._lora_wo_seg = lora_path_wo_seg
         self._lora_w_seg = lora_path_w_seg
@@ -157,7 +120,6 @@ class BaldKonverterPipeline:
             lora_revision if lora_revision is not None
             else cfg.models.bald_konverter_revision
         )
-        self._flame_dir = flame_dir
 
         self._active_lora: Optional[str] = None  # track which LoRA is loaded
 
@@ -166,6 +128,8 @@ class BaldKonverterPipeline:
     # ------------------------------------------------------------------ #
 
     def _get_base_pipe(self):
+        from hairport import memory
+
         if self._pipe is None:
             from .models.konverter import load_base_pipeline
 
@@ -175,6 +139,10 @@ class BaldKonverterPipeline:
                 device=self.device,
                 dtype=self.dtype,
             )
+        else:
+            # May have been parked in CPU RAM between usage windows
+            # (memory.policy=exclusive); bring it back before use.
+            memory.move_to(self._pipe, self.device)
         return self._pipe
 
     def _load_lora(self, variant: str) -> None:
@@ -204,22 +172,30 @@ class BaldKonverterPipeline:
             self._preproc = HairMaskPipeline(device=self.device)
         return self._preproc
 
-    def _get_flame_segmenter(self):
-        if self._flame is None:
-            from .preprocessing.flame import FLAMESegmenter
-            from hairport.config import get_config
+    def _get_backend(self):
+        if self._backend is None:
+            from hairport.fitting import get_fitting_backend
 
-            cfg = get_config()
+            self._backend = get_fitting_backend(device=self.device)
+        return self._backend
 
-            self._flame = FLAMESegmenter(
-                flame_model_runtime=cfg.paths.flame_model_runtime,
-                flame_model_source=cfg.paths.flame_model_source,
-                flame_masks_path=cfg.paths.flame_masks,
-                flame_eyelids_path=cfg.paths.flame_eyelids,
-                flame_dir=self._flame_dir,
-                device=self.device,
-            )
-        return self._flame
+    def _face_bbox(self, image_np: np.ndarray):
+        """Best-effort face bbox ``(x, y, w, h)`` for framing; ``None`` on failure."""
+        try:
+            if self._face_detector is None:
+                from hairport.core import FacialLandmarkDetector
+
+                self._face_detector = FacialLandmarkDetector(
+                    static_image_mode=True, max_num_faces=1,
+                    refine_landmarks=False, min_detection_confidence=0.5,
+                )
+            bbox = self._face_detector.get_face_bounding_box(image_np, return_format="xywh")
+            if bbox is None:
+                return None
+            return tuple(int(v) for v in bbox)
+        except Exception:
+            logger.debug("Face detection unavailable for framing; using mask bbox.", exc_info=True)
+            return None
 
     # ------------------------------------------------------------------ #
     # Core generation methods
@@ -233,14 +209,7 @@ class BaldKonverterPipeline:
         guidance_scale: float,
         strength: float,
     ) -> tuple[Image.Image, Image.Image]:
-        """Two-panel generation (wo_seg).
-
-        Returns
-        -------
-        tuple[Image.Image, Image.Image]
-            ``(bald_image, flux_input)`` — the cropped bald result and the
-            assembled 2-panel image that was fed to FLUX.
-        """
+        """Two-panel wo_seg generation; returns (bald_plate, flux_input_2panel)."""
         self._load_lora("wo_seg")
         pipe = self._get_base_pipe()
 
@@ -252,7 +221,7 @@ class BaldKonverterPipeline:
             resize_to_square,
         )
 
-        size = WO_SEG_IMAGE_SIZE
+        size = self.wo_seg_image_size
         img = resize_to_square(image, size)
         combined = create_two_panel(img, img)
         mask = make_right_half_mask(combined.size[0], combined.size[1])
@@ -281,9 +250,12 @@ class BaldKonverterPipeline:
         num_inference_steps: int,
         guidance_scale: float,
         strength: float,
-        flame_mask: Optional[np.ndarray] = None,
+        smplx_body_mask: np.ndarray,
+        head_mask: Optional[np.ndarray] = None,
     ) -> tuple[Image.Image, Image.Image]:
-        """Four-panel generation (w_seg). Returns (bald_image, grid_image)."""
+        """Four-panel w_seg generation; returns (bald_plate, grid). Panels:
+        top-left = SAM3 hair (red) over body∪head (green); top-right = SMPL-X
+        silhouette (green); bottom = original plate + wo_seg bald."""
         self._load_lora("w_seg")
         pipe = self._get_base_pipe()
 
@@ -294,34 +266,25 @@ class BaldKonverterPipeline:
             resize_to_square,
         )
 
-        size = W_SEG_IMAGE_SIZE
+        size = self.w_seg_image_size
         half = size // 2
 
-        # Compute final body mask (union with FLAME or SAM head mask)
+        # Top-left body = BEN2 bald silhouette ∪ precomputed head mask.
         final_body = body_mask.copy()
-        if flame_mask is not None:
-            final_body = np.maximum(final_body, flame_mask)
-        else:
-            # Use SAM "head" prompt on the bald image as fallback
-            try:
-                preproc = self._get_preprocessor()
-                head_pil, _ = preproc.sam_extractor(bald_wo_seg, prompt="head")
-                head_mask = (np.array(head_pil) > 127).astype(np.uint8) * 255
-                import cv2
+        if head_mask is not None:
+            import cv2
 
-                if head_mask.shape != final_body.shape:
-                    head_mask = cv2.resize(
-                        head_mask,
-                        (final_body.shape[1], final_body.shape[0]),
-                        interpolation=cv2.INTER_NEAREST,
-                    )
-                final_body = np.maximum(final_body, head_mask)
-            except Exception:
-                logger.warning("SAM head-mask fallback failed; using body mask only.")
+            if head_mask.shape != final_body.shape:
+                head_mask = cv2.resize(
+                    head_mask,
+                    (final_body.shape[1], final_body.shape[0]),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+            final_body = np.maximum(final_body, head_mask)
 
         # Build panels
         combined_seg = create_combined_seg_image(hair_mask, final_body, size=half)
-        body_green = create_body_green_image(final_body, size=half)
+        body_green = create_body_green_image(smplx_body_mask, size=half)
         orig_panel = resize_to_square(image, half)
         bald_panel = resize_to_square(bald_wo_seg, half)
 
@@ -358,32 +321,19 @@ class BaldKonverterPipeline:
         strength: float = DEFAULT_STRENGTH,
         return_intermediates: bool = False,
     ) -> BaldResult:
-        """Generate a bald portrait from *image*.
+        """Bald-convert *image* (path or PIL). ``refine_seed`` defaults to
+        ``seed``; ``return_intermediates`` populates the optional BaldResult fields."""
+        import cv2
+        from hairport import memory
 
-        Parameters
-        ----------
-        image : path or PIL Image
-            Input portrait.
-        seed : int
-            Random seed for reproducibility.
-        num_inference_steps : int
-            Number of diffusion steps.
-        guidance_scale : float
-            Classifier-free guidance scale.
-        strength : float
-            Inpainting strength (0–1).
-        return_intermediates : bool
-            If ``True``, populate optional fields in :class:`BaldResult`.
-
-        Returns
-        -------
-        BaldResult
-        """
-        # Load image
+        # Load image (keep both a full-res ndarray and PIL view).
         if isinstance(image, (str, Path)):
+            source = str(image)
             image = Image.open(image).convert("RGB")
         else:
+            source = None
             image = image.convert("RGB")
+        img_np = np.array(image)
 
         wo_gen_kwargs = dict(
             seed=seed,
@@ -391,60 +341,122 @@ class BaldKonverterPipeline:
             guidance_scale=guidance_scale,
             strength=strength,
         )
+        ri = return_intermediates
 
-        # ---- wo_seg only ----------------------------------------------------
-        if self.mode == "wo_seg":
-            bald, flux_input_wo = self._run_wo_seg(image, **wo_gen_kwargs)
-            return BaldResult(
-                bald_image=bald,
-                flux_input_wo_seg=flux_input_wo,
+        # ---- Preprocess on the ORIGINAL (full-res) -------------------------
+        # hair matte + foreground silhouette in true image coordinates; needed
+        # by every mode for framing and the composite.
+        preproc = self._get_preprocessor()
+        preproc.to_device(self.device)
+        prep_result = preproc.preprocess(image, return_foreground=ri)
+        hair_full = prep_result.hair_mask
+        silh_full = prep_result.silhouette
+        face_bbox = self._face_bbox(img_np)
+        preproc.offload()
+
+        # ---- Framing — head-centric square plate ---------------------------
+        fr = plan_framing(
+            img_np, hair_full, face_bbox=face_bbox, foreground_mask=silh_full,
+            crop_scale=float(self.framing_cfg.crop_scale),
+            model_size=self.wo_seg_image_size,
+        )
+        plate_pil = Image.fromarray(
+            fr.extract_native(img_np, border_mode=str(self.framing_cfg.border_pad_mode))
+        )
+
+        # ---- Step 1: wo_seg on the plate -----------------------------------
+        bald_plate_pil, flux_input_wo = self._run_wo_seg(plate_pil, **wo_gen_kwargs)
+        bald_wo_plate = bald_plate_pil  # keep the wo_seg plate for intermediates
+
+        grid = None
+        head_fit = None
+        body_mask_plate = head_mask_plate = smplx_body_plate = None
+
+        # ---- Steps 2-5: w_seg refinement (w_seg / auto) --------------------
+        if self.mode != "wo_seg":
+            memory.offload(self._pipe)
+            preproc.to_device(self.device)
+            # body silhouette (BEN2) on the bald plate — top-left panel base
+            _, bald_silh_pil = preproc.bg_remover.remove_background(bald_plate_pil)
+            body_mask_plate = np.array(bald_silh_pil).astype(np.uint8)
+            # hair matte resampled into plate coords (top-left red)
+            hair_plate = fr.map_mask_into_plate(hair_full)
+            # SMPL-X head + body fit on the bald plate
+            backend = self._get_backend()
+            backend.to_device(self.device)
+            head_fit = backend.fit(bald_plate_pil, source=source)
+            head_mask_plate = head_fit.head_mask
+            smplx_body_plate = head_fit.body_mask
+            backend.offload()
+            preproc.offload()
+
+            bald_plate_pil, grid = self._run_w_seg(
+                image=plate_pil,
+                bald_wo_seg=bald_plate_pil,
+                hair_mask=hair_plate,
+                body_mask=body_mask_plate,
+                head_mask=head_mask_plate,
+                smplx_body_mask=smplx_body_plate,
+                seed=seed if refine_seed is None else refine_seed,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                strength=strength,
             )
 
-        # ---- w_seg or auto --------------------------------------------------
-        # Step 1: initial bald via wo_seg
-        bald_wo, flux_input_wo = self._run_wo_seg(image, **wo_gen_kwargs)
-
-        # Step 2: preprocessing — hair mask from original image
-        preproc = self._get_preprocessor()
-        prep_result = preproc.preprocess(
-            image,
-            return_foreground=return_intermediates,
-            return_segformer=return_intermediates,
+        # ---- Composite the bald plate back into the original frame ---------
+        # The bald plate is composited as-is (no color matching); the matte
+        # grows the hair seed through the model-changed wisp band to avoid a
+        # residual-hair halo.
+        side = fr.side
+        orig_plate = fr.extract_native(img_np, border_mode="reflect")
+        bald_plate_native = cv2.resize(
+            np.array(bald_plate_pil), (side, side), interpolation=cv2.INTER_LANCZOS4
         )
+        hair_plate_native = fr.map_mask_into_plate(hair_full)
+        ccfg = self.compositing_cfg
 
-        # Step 3: body mask from BEN2 on the *bald* image (full silhouette)
-        _, bald_silh_pil = preproc.bg_remover.remove_background(bald_wo)
-        body_mask = np.array(bald_silh_pil).astype(np.uint8)
-
-        # Step 4: optional FLAME head mask
-        flame_mask = None
-        if self.use_flame:
-            flame_seg = self._get_flame_segmenter()
-            flame_mask = flame_seg.segment(bald_wo)
-
-        # Step 5: w_seg generation
-        bald_w, grid = self._run_w_seg(
-            image=image,
-            bald_wo_seg=bald_wo,
-            hair_mask=prep_result.hair_mask,
-            body_mask=body_mask,
-            flame_mask=flame_mask,
-            seed=seed if refine_seed is None else refine_seed,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            strength=strength,
+        comp_plate, alpha_plate, comp_params = compositing.composite_plate(
+            orig_plate, bald_plate_native, hair_plate_native,
+            seam_poisson=bool(ccfg.seam_poisson),
+            grain_match=bool(ccfg.grain_match),
+            matte_dilate_px=int(ccfg.matte_dilate_px),
+            extend_band_frac=float(ccfg.extend_band_frac),
+            extend_diff_threshold=int(ccfg.extend_diff_threshold),
+            feather_px=int(ccfg.feather_px),
+            border_zero_frac=float(ccfg.border_zero_frac),
         )
+        comp_params["seed"] = seed
+        comp_params["refine_seed"] = refine_seed
+
+        final_pil = Image.fromarray(fr.paste(img_np, comp_plate))
+
+        # ---- Map plate-space masks back to the ORIGINAL frame -------------- #
+        def _to_orig(mask_plate):
+            if mask_plate is None:
+                return None
+            m = cv2.resize(mask_plate, (side, side), interpolation=cv2.INTER_NEAREST) \
+                if mask_plate.shape[:2] != (side, side) else mask_plate
+            return fr.plate_to_original(m.astype(np.uint8))
+
+        if head_fit is not None:
+            head_fit.extra["framing"] = fr.to_dict()
 
         return BaldResult(
-            bald_image=bald_w,
-            bald_image_wo_seg=bald_wo,
-            hair_mask=prep_result.hair_mask if return_intermediates else None,
-            body_mask=body_mask if return_intermediates else None,
-            segmentation_map=prep_result.segformer_labels if return_intermediates else None,
+            bald_image=final_pil,
+            plate=orig_plate if ri else None,
+            bald_plate=bald_plate_native if ri else None,
+            change_alpha=(alpha_plate * 255).astype(np.uint8) if ri else None,
+            bald_image_wo_seg=bald_wo_plate if ri else None,
+            hair_mask=hair_full if ri else None,
+            body_mask=_to_orig(body_mask_plate) if ri else None,
+            head_mask=_to_orig(head_mask_plate) if ri else None,
+            smplx_body_mask=_to_orig(smplx_body_plate) if ri else None,
             flux_input_wo_seg=flux_input_wo,
             flux_input_w_seg=grid,
-            foreground=prep_result.foreground if return_intermediates else None,
-            flame_mask=flame_mask if return_intermediates else None,
+            foreground=prep_result.foreground if ri else None,
+            framing=fr,
+            comp_params=comp_params,
+            head_fit=head_fit,
         )
 
     # ------------------------------------------------------------------ #
@@ -452,12 +464,15 @@ class BaldKonverterPipeline:
     # ------------------------------------------------------------------ #
 
     def teardown(self) -> None:
-        """Release all GPU resources."""
+        """Release all GPU resources (idempotent; everything reloads lazily)."""
         if self._preproc is not None:
             self._preproc.teardown()
-        if self._flame is not None:
-            self._flame.teardown()
+            self._preproc = None
+        if self._backend is not None:
+            self._backend.teardown()
+            self._backend = None
         if self._pipe is not None:
             del self._pipe
             self._pipe = None
+        self._active_lora = None
         torch.cuda.empty_cache()

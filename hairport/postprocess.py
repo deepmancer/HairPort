@@ -195,10 +195,10 @@ def _process_lmk_3d_fitting(
 ):
     """Process 3D landmark fitting for all samples in random order.
 
-    Head orientation is computed via FLAMEFitter (SHeaP) and cached under
+    Head orientation is computed via the fitting backend (PEAR) and cached under
     ``<data_dir>/head_orientation/<sample_id>/head_orientation.json``.
     """
-    from hairport.core.flame_fitting import compute_head_orientation
+    from hairport.fitting.orientation import compute_head_orientation
 
     all_sample_ids = os.listdir(str(textured_mesh_dir))
     sample_ids = all_sample_ids
@@ -220,7 +220,7 @@ def _process_lmk_3d_fitting(
                 if file_size_mb >= 25:
                     to_frontalize_ids.append(folder)
 
-    fitter = None  # lazily initialised FLAMEFitter
+    backend = None  # lazily initialised fitting backend
 
     for sample_id in tqdm(sample_ids, desc="Fitting 3D landmarks", unit="sample"):
         target_textured_mesh_path = textured_mesh_dir / sample_id / "textured_mesh.glb"
@@ -228,7 +228,7 @@ def _process_lmk_3d_fitting(
         if not target_textured_mesh_path.exists():
             continue
         
-        # Compute head orientation via FLAMEFitter (cached)
+        # Compute head orientation via the fitting backend (cached)
         image_path = data_dir / "image" / f"{sample_id}.png"
         cache_dir = data_dir / "head_orientation" / sample_id
         if not image_path.exists():
@@ -239,7 +239,7 @@ def _process_lmk_3d_fitting(
             head_orientation_dict = compute_head_orientation(
                 image_path=image_path,
                 cache_dir=cache_dir,
-                fitter=fitter,
+                backend=backend,
             )
         except Exception as e:
             logger.warning(f"Could not compute head orientation for {sample_id}: {e}")

@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Iterable
 
 from hairport.config import add_config_args, get_config, load_config_from_args
-from hairport.flame_assets import ensure_flame_model_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -30,29 +29,29 @@ def validate_preflight(stages: Iterable[str] | None = None) -> list[str]:
 
     required: list[tuple[Path, str]] = []
     missing_runtime: list[str] = []
-    flame_users = selected & {"landmark_3d", "align_view", "blend_hair"}
-    if flame_users:
-        flame_model_source = Path(cfg.paths.flame_model_source)
-        flame_model_runtime = Path(cfg.paths.flame_model_runtime)
-        try:
-            ensure_flame_model_runtime(flame_model_source, flame_model_runtime)
-        except FileNotFoundError:
-            # Let required-file checks below produce explicit file-level errors.
-            pass
-
+    # Stages that need head fitting (cfg.fitting.backend, default PEAR).
+    fitting_users = selected & {"baldify", "landmark_3d", "align_view", "blend_hair"}
+    if fitting_users:
+        pear_root = Path(cfg.fitting.pear_module)
         required.extend(
             [
-                (flame_model_source, "FLAME source model (.pkl)"),
-                (flame_model_runtime, "FLAME runtime model (.pt)"),
-                (Path(cfg.paths.flame_masks), "FLAME vertex mask mapping"),
-                (Path(cfg.paths.flame_eyelids), "FLAME eyelids blendshape"),
-                (Path(cfg.paths.sheap_module), "SHeaP module"),
+                (pear_root, "PEAR module (git submodule)"),
+                (pear_root / "assets" / "SMPLX" / "SMPLX_NEUTRAL_2020.npz",
+                 "SMPL-X neutral model"),
+                (pear_root / "assets" / "SMPLX" / "flame_generic_model.pkl",
+                 "PEAR SMPL-X/FLAME generic model"),
+                (pear_root / "assets" / "FLAME" / "FLAME2020" / "generic_model.pkl",
+                 "PEAR FLAME 2020 model"),
             ]
         )
-        if importlib.util.find_spec("sheap") is None:
+        if importlib.util.find_spec("ultralytics") is None:
             missing_runtime.append(
-                "importable Python package 'sheap' "
-                f"(install with: pip install -e {Path(cfg.paths.sheap_module)})"
+                "importable Python package 'ultralytics' (pip install ultralytics)"
+            )
+        if importlib.util.find_spec("pytorch3d") is None:
+            missing_runtime.append(
+                "importable Python package 'pytorch3d' "
+                "(see scripts/setup_submodules.sh)"
             )
     if "landmark_3d" in selected:
         required.append(
@@ -91,7 +90,7 @@ def validate_preflight(stages: Iterable[str] | None = None) -> list[str]:
     revision_requirements = {
         "baldify": [
             "flux_kontext_revision", "bald_konverter_revision",
-            "sam_bald_konverter_revision", "ben2_revision", "face_parser_revision",
+            "sam_bald_konverter_revision", "ben2_revision",
         ],
         "caption": [
             "captioner_revision", "qwen_image_edit_revision",

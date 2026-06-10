@@ -17,14 +17,10 @@ paths:
   assets_dir: assets
   modules_dir: modules
   output_dir: outputs
-  flame_model_source: ${paths.assets_dir}/base_models/flame/parametric_models/generic_model.pkl
-  flame_model_runtime: ${paths.assets_dir}/base_models/flame/parametric_models/generic_model.pt
-  flame_masks: ${paths.assets_dir}/base_models/flame/vertex_mappings/FLAME_masks.pkl
-  flame_eyelids: ${paths.assets_dir}/landmarks/flame/eyelids.pt
   codeformer_module: ${paths.modules_dir}/CodeFormer
   codeformer_weights: ${paths.assets_dir}/weights/codeformer
   mv_adapter_module: ${paths.modules_dir}/MV-Adapter
-  sheap_module: ${paths.modules_dir}/SHeaP
+  pear_module: ${paths.modules_dir}/PEAR
   mediapipe_flame_embedding: ${paths.assets_dir}/landmarks/flame/mediapipe_landmark_embedding.npz
 
 # ---- Model IDs / HuggingFace references ----
@@ -43,7 +39,6 @@ models:
   sam: facebook/sam3.1
   sam_bald_konverter: facebook/sam3
   ben2: PramaLLC/BEN2
-  face_parser: jonathandinu/face-parsing
   # VL / captioning
   captioner: Qwen/Qwen3-VL-8B-Instruct
   qwen_image_edit: Qwen/Qwen-Image-Edit
@@ -69,7 +64,6 @@ models:
   sam_revision: null
   sam_bald_konverter_revision: null
   ben2_revision: null
-  face_parser_revision: null
   captioner_revision: null
   qwen_image_edit_revision: null
   qwen_lightning_lora_revision: null
@@ -85,11 +79,16 @@ sam:
 bg_removal:
   alpha_threshold: 0.8
 
-# ---- FLAME head model ----
-flame:
-  model_type: expressive
-  detection_confidence: 0.5
-  padding_ratio: 0.1
+# ---- Human/head fitting backend (see hairport/fitting/) ----
+fitting:
+  backend: pear                         # registered backend key
+  pear_module: ${paths.modules_dir}/PEAR
+  pear_repo_id: BestWJH/PEAR_models     # HF Hub model repo
+  pear_checkpoint: ehm_model_stage1.pt
+  pear_config: infer
+  detector_weights: model_zoo/yolov8x.pt  # relative to the PEAR module root
+  matting: true                         # feed PEAR the BEN2-matted image
+  render_size: 768                      # SMPL-X silhouette render resolution (model patch stays 256)
 
 # ---- CodeFormer super-resolution ----
 codeformer:
@@ -112,13 +111,32 @@ facial_landmarks:
 
 baldify:
   mode: auto
+  # Generation parameters matching the LoRA training configuration.
   guidance_scale: 1.0
   num_inference_steps: 35
   strength: 1.0
   seed: ${seed}
   dtype: bfloat16
+  # wo_seg: per-panel size (2-panel input is 1536x768)
   wo_seg_image_size: 768
+  # w_seg: full 2x2 grid size (each panel is 512x512)
   w_seg_image_size: 1024
+  # Head-centric square plate (non-square input support)
+  framing:
+    crop_scale: 1.8           # plate side = crop_scale * max(head bbox dims)
+    border_pad_mode: reflect  # reflect | constant
+  # VFX composite back into the original frame (hair-removal matte; no color match)
+  compositing:
+    seam_poisson: true            # screened-Poisson seam pass
+    grain_match: true             # add grain matched to the original
+    matte_dilate_px: 6            # seed close / small safety dilation
+    extend_band_frac: 0.06        # outward search band = frac * plate side
+    extend_diff_threshold: 12     # |orig-bald| above this = model-changed (wisps)
+    feather_px: 5                 # outward-only matte feather
+    border_zero_frac: 0.02
+  # Persist intermediates (plate, bald_plate, masks, matte, framing, head fit,
+  # manifest) for later access/analysis.
+  persist_intermediates: true
 
 caption:
   resize_percentage: 30
@@ -203,6 +221,9 @@ blend_hair:
   alignment_iou_weight: 1.0
   alignment_landmark_weight: 1.0
   sam_confidence_threshold: 0.4
+  # Target-image folder for 3D-unaware blending: auto | image | image_outpainted
+  # ("auto" preserves the legacy dataset-name-based behavior)
+  target_image_folder: auto
 
 transfer_hair:
   guidance_scale: 1.0
@@ -220,6 +241,15 @@ transfer_hair:
 # ---- Generated-artifact reuse policy ----
 cache:
   policy: validated
+
+# ---- GPU model-residency policy (see hairport/memory.py) ----
+memory:
+  # exclusive: at most one large model on GPU at a time (others parked in CPU RAM)
+  # resident:  legacy behavior — models stay loaded on GPU
+  policy: exclusive
+  # Component-level diffusers offload for big pipelines: none | model | sequential
+  # ("model" keeps only the active component on GPU — halves FLUX peak, ~10-20% slower)
+  flux_offload: none
 
 # ---- Uncrop (SDXL-based outpainting) ----
 uncrop:

@@ -799,10 +799,13 @@ class TexturedViewGenerator:
                     scale=lora_scale,
                 )
 
-        # Move to device
-        self.pipe.to(device=config.device, dtype=config.dtype)
+        # Move to device (placement honours memory.flux_offload)
+        from hairport import memory
+
+        self.pipe.to(dtype=config.dtype)
+        memory.apply_offload_mode(self.pipe, memory.flux_offload_mode(), config.device)
         self.pipe.cond_encoder.to(device=config.device, dtype=config.dtype)
-        
+
         # Enable memory optimization
         self.pipe.enable_vae_slicing()
         

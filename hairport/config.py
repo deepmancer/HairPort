@@ -10,7 +10,7 @@ Usage::
 
     cfg = get_config()                  # auto-loads configs/default.yaml
     print(cfg.models.flux_klein)        # "black-forest-labs/FLUX.2-klein-9B"
-    print(cfg.paths.flame_model_runtime)  # resolved absolute path
+    print(cfg.fitting.backend)          # "pear"
 
 Override at startup::
 
@@ -47,22 +47,10 @@ class PathsConfig:
     assets_dir: str = "assets"
     modules_dir: str = "modules"
     output_dir: str = "outputs"
-    flame_model_source: str = (
-        "${paths.assets_dir}/base_models/flame/parametric_models/generic_model.pkl"
-    )
-    flame_model_runtime: str = (
-        "${paths.assets_dir}/base_models/flame/parametric_models/generic_model.pt"
-    )
-    flame_masks: str = (
-        "${paths.assets_dir}/base_models/flame/vertex_mappings/FLAME_masks.pkl"
-    )
-    flame_eyelids: str = (
-        "${paths.assets_dir}/landmarks/flame/eyelids.pt"
-    )
     codeformer_module: str = "${paths.modules_dir}/CodeFormer"
     codeformer_weights: str = "${paths.assets_dir}/weights/codeformer"
     mv_adapter_module: str = "${paths.modules_dir}/MV-Adapter"
-    sheap_module: str = "${paths.modules_dir}/SHeaP"
+    pear_module: str = "${paths.modules_dir}/PEAR"
     mediapipe_flame_embedding: str = (
         "${paths.assets_dir}/landmarks/flame/"
         "mediapipe_landmark_embedding.npz"
@@ -85,7 +73,6 @@ class ModelsConfig:
     sam: str = "facebook/sam3.1"
     sam_bald_konverter: str = "facebook/sam3"
     ben2: str = "PramaLLC/BEN2"
-    face_parser: str = "jonathandinu/face-parsing"
     # VL / captioning
     captioner: str = "Qwen/Qwen3-VL-8B-Instruct"
     qwen_image_edit: str = "Qwen/Qwen-Image-Edit"
@@ -110,7 +97,6 @@ class ModelsConfig:
     sam_revision: Optional[str] = None
     sam_bald_konverter_revision: Optional[str] = None
     ben2_revision: Optional[str] = None
-    face_parser_revision: Optional[str] = None
     captioner_revision: Optional[str] = None
     qwen_image_edit_revision: Optional[str] = None
     qwen_lightning_lora_revision: Optional[str] = None
@@ -130,10 +116,23 @@ class BGRemovalConfig:
 
 
 @dataclass
-class FlameConfig:
-    model_type: str = "expressive"
-    detection_confidence: float = 0.5
-    padding_ratio: float = 0.1
+class FittingConfig:
+    """Human/head fitting backend (see :mod:`hairport.fitting`)."""
+
+    # Registered backend key. Currently only "pear" (SMPL-X + FLAME EHM).
+    backend: str = "pear"
+    # Vendored PEAR submodule root (CWD the adapter chdirs into).
+    pear_module: str = "${paths.modules_dir}/PEAR"
+    # PEAR model checkpoint on the Hugging Face Hub.
+    pear_repo_id: str = "BestWJH/PEAR_models"
+    pear_checkpoint: str = "ehm_model_stage1.pt"
+    pear_config: str = "infer"
+    # Person detector weights, relative to the PEAR module root.
+    detector_weights: str = "model_zoo/yolov8x.pt"
+    # Feed PEAR the BEN2-matted (background-removed) image.
+    matting: bool = True
+    # SMPL-X silhouette render resolution (square). The model patch stays 256.
+    render_size: int = 768
 
 
 @dataclass
@@ -155,15 +154,52 @@ class FacialLandmarksConfig:
 
 
 @dataclass
+class FramingConfig:
+    """Head-centric square-plate framing (non-square input support)."""
+
+    # Square plate side = crop_scale × max(head_bbox_w, head_bbox_h).
+    crop_scale: float = 1.8
+    # Border fill for plate pixels outside the image: "reflect" | "constant".
+    border_pad_mode: str = "reflect"
+
+
+@dataclass
+class CompositingConfig:
+    """VFX composite of the bald plate back into the original frame.
+
+    Hair-*removal* matte: the SAM hair seed is grown outward through the pixels
+    the model actually changed (the wisp band) so no residual-hair halo remains.
+    The bald plate is composited as-is (no color matching — the model's direct
+    output already matches the input).
+    """
+
+    seam_poisson: bool = True            # screened-Poisson seam pass
+    grain_match: bool = True             # add noise matched to the original
+    matte_dilate_px: int = 6             # seed close / small safety dilation
+    extend_band_frac: float = 0.06       # outward search band = frac × plate side
+    extend_diff_threshold: int = 12      # |orig−bald| above this = model-changed
+    feather_px: int = 5                  # outward-only matte feather
+    border_zero_frac: float = 0.02       # zero the matte in this border band
+
+
+@dataclass
 class BaldifyConfig:
     mode: str = "auto"
+    # Generation parameters matching the LoRA training configuration.
     guidance_scale: float = 1.0
     num_inference_steps: int = 35
     strength: float = 1.0
     seed: int = 42
     dtype: str = "bfloat16"
+    # wo_seg: per-panel size (2-panel input is 2*size × size = 1536×768).
     wo_seg_image_size: int = 768
+    # w_seg: full 2×2 grid size (each panel is size/2 = 512×512).
     w_seg_image_size: int = 1024
+    framing: FramingConfig = field(default_factory=FramingConfig)
+    compositing: CompositingConfig = field(default_factory=CompositingConfig)
+    # Persist intermediates (plate, bald_plate, masks, matte, framing, head fit,
+    # manifest) next to outputs for later access/analysis.
+    persist_intermediates: bool = True
 
 
 @dataclass
@@ -265,6 +301,12 @@ class BlendHairConfig:
     alignment_iou_weight: float = 1.0
     alignment_landmark_weight: float = 1.0
     sam_confidence_threshold: float = 0.4
+    # Folder under <data_dir>/ providing target images for 3D-unaware blending:
+    #   "auto"             — "image_outpainted" for celeba_reduced datasets,
+    #                        "image" otherwise (legacy name-based behavior)
+    #   "image"            — always use original images
+    #   "image_outpainted" — always use outpainted images
+    target_image_folder: str = "auto"
 
 
 @dataclass
@@ -289,6 +331,19 @@ class CacheConfig:
     """Policy for reusing generated inference artifacts."""
 
     policy: str = "validated"
+
+
+@dataclass
+class MemoryConfig:
+    """GPU model-residency policy (see :mod:`hairport.memory`)."""
+
+    # "exclusive": at most one large model on GPU at a time — others are
+    #              parked in CPU RAM between usage windows (default).
+    # "resident":  legacy behavior — models stay where they were loaded.
+    policy: str = "exclusive"
+    # Component-level diffusers offload for the big pipelines
+    # (FLUX.1-Kontext / FLUX.2 Klein / SDXL): none | model | sequential.
+    flux_offload: str = "none"
 
 
 @dataclass
@@ -401,7 +456,7 @@ class HairPortConfig:
     models: ModelsConfig = field(default_factory=ModelsConfig)
     sam: SAMSectionConfig = field(default_factory=SAMSectionConfig)
     bg_removal: BGRemovalConfig = field(default_factory=BGRemovalConfig)
-    flame: FlameConfig = field(default_factory=FlameConfig)
+    fitting: FittingConfig = field(default_factory=FittingConfig)
     codeformer: CodeFormerConfig = field(default_factory=CodeFormerConfig)
     facial_landmarks: FacialLandmarksConfig = field(
         default_factory=FacialLandmarksConfig
@@ -416,6 +471,7 @@ class HairPortConfig:
     blend_hair: BlendHairConfig = field(default_factory=BlendHairConfig)
     transfer_hair: TransferHairConfig = field(default_factory=TransferHairConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
     uncrop: UncropConfig = field(default_factory=UncropConfig)
     rendering: RenderingConfig = field(default_factory=RenderingConfig)
     rendering_fit_lmk: RenderingFitLmkConfig = field(
@@ -544,6 +600,19 @@ def _validate_config(cfg: DictConfig) -> None:
         raise ValueError("cache.policy must be 'validated' for reproducible inference.")
     if int(cfg.enhance_view.conditioning_phase) not in (1, 2):
         raise ValueError("enhance_view.conditioning_phase must be 1 or 2.")
+    if str(cfg.blend_hair.target_image_folder) not in ("auto", "image", "image_outpainted"):
+        raise ValueError(
+            "blend_hair.target_image_folder must be 'auto', 'image', or "
+            "'image_outpainted'."
+        )
+    if str(cfg.memory.policy) not in ("exclusive", "resident"):
+        raise ValueError("memory.policy must be 'exclusive' or 'resident'.")
+    if str(cfg.memory.flux_offload) not in ("none", "model", "sequential"):
+        raise ValueError(
+            "memory.flux_offload must be 'none', 'model', or 'sequential'."
+        )
+    if str(cfg.fitting.backend) not in ("pear",):
+        raise ValueError("fitting.backend must be 'pear'.")
 
 
 # --------------------------------------------------------------------------- #

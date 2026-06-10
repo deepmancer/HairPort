@@ -36,9 +36,10 @@ clone_at_commit "CodeFormer" "https://github.com/deepmancer/CodeFormer.git" \
 clone_at_commit "MV-Adapter" "https://github.com/deepmancer/MV-Adapter.git" \
     "849c1a2babdc76c01cbe6158493d750088a3f250"
 
-# ── SHeaP ───────────────────────────────────────────
-clone_at_commit "SHeaP" "https://github.com/deepmancer/SHeaP.git" \
-    "cde7b7a9f0ba28e8250d6fc7100fd985be483134"
+# ── PEAR (head/body fitting backend) ────────────────────────────────
+# PEAR is a tracked git submodule; init it (or update to the pinned commit).
+echo ">> Initializing PEAR submodule..."
+git -C "${REPO_ROOT}" submodule update --init --recursive modules/PEAR
 
 # ── MV-Adapter downloads ───────────────────────────────────────────
 echo ">> Setting up MV-Adapter checkpoints..."
@@ -60,15 +61,24 @@ cd "${REPO_ROOT}"
 
 cd "${REPO_ROOT}"
 
-# ── SHeaP downloads ──────────────────────────────────────────────────────────
-cd "${MODULES_DIR}/SHeaP"
-conda activate hairport && python convert_flame.py --flame_base_dir "${REPO_ROOT}/assets/base_models/flame/parametric_models"
-cd "${REPO_ROOT}"
+# ── PEAR assets ───────────────────────────────────────────────────────────────
+# PEAR expects parametric models under modules/PEAR/assets/{SMPLX,FLAME,SMPL,...}.
+# Download the prepared bundle from the PEAR authors' Google Drive and extract it
+# in place. By downloading you accept the SMPL-X / SMPL / FLAME license terms.
+echo ">> Downloading PEAR asset bundle..."
+if [[ ! -f "${MODULES_DIR}/PEAR/assets/SMPLX/SMPLX_NEUTRAL_2020.npz" ]]; then
+    gdown 1HvJ4WljPhEjoVgFBQurGLoKFN9-9UBb0 -O /tmp/pear_assets.zip
+    unzip -q -o /tmp/pear_assets.zip -d "${MODULES_DIR}/PEAR"
+    rm -f /tmp/pear_assets.zip
+else
+    echo ">> PEAR assets already present, skipping."
+fi
 
-# ── Install editable packages where needed ─────────────────────────
-echo ""
-echo ">> Installing SHeaP in editable mode..."
-pip install -e "${MODULES_DIR}/SHeaP"
+# ── pytorch3d (required by PEAR's renderer / mesh ops) ──────────────────────────
+# Build against the active torch's CUDA toolkit and a supported host compiler:
+echo ">> Installing pytorch3d (CUDA build)..."
+FORCE_CUDA=1 TORCH_CUDA_ARCH_LIST="8.6" \
+    pip install --no-build-isolation "git+https://github.com/facebookresearch/pytorch3d.git@stable"
 
 echo ""
 echo ">> Installing CodeFormer dependencies..."

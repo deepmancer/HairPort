@@ -116,6 +116,7 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertFalse(results[0].success)
         self.assertTrue(state["unloaded"])
 
+    @unittest.skipUnless(find_spec("bpy"), "bpy (Blender) not installed")
     def test_pair_decisions_do_not_mutate_input_csv(self) -> None:
         from hairport.view_aligner import Config, prepare_pairs
 
@@ -225,30 +226,15 @@ class RuntimeContractTests(unittest.TestCase):
             self.assertEqual(captured["cwd"], mv_module)
             self.assertEqual(summary.completed, 1)
 
-    def test_bald_konverter_uses_configured_flame_paths_by_default(self) -> None:
+    def test_bald_konverter_uses_fitting_backend_registry(self) -> None:
         from hairport.bald_konverter.pipeline import BaldKonverterPipeline
-        from hairport.config import get_config
 
-        pipeline = BaldKonverterPipeline(mode="wo_seg", device="cpu", use_flame=True)
-        with patch("hairport.bald_konverter.preprocessing.flame.FLAMESegmenter") as constructor:
-            pipeline._get_flame_segmenter()
-        cfg = get_config()
-        self.assertEqual(
-            constructor.call_args.kwargs["flame_model_runtime"],
-            cfg.paths.flame_model_runtime,
-        )
-        self.assertEqual(
-            constructor.call_args.kwargs["flame_model_source"],
-            cfg.paths.flame_model_source,
-        )
-        self.assertEqual(
-            constructor.call_args.kwargs["flame_masks_path"],
-            cfg.paths.flame_masks,
-        )
-        self.assertEqual(
-            constructor.call_args.kwargs["flame_eyelids_path"],
-            cfg.paths.flame_eyelids,
-        )
+        pipeline = BaldKonverterPipeline(mode="wo_seg", device="cpu")
+        sentinel = object()
+        with patch("hairport.fitting.get_fitting_backend", return_value=sentinel) as factory:
+            backend = pipeline._get_backend()
+        self.assertIs(backend, sentinel)
+        self.assertEqual(factory.call_args.kwargs["device"], "cpu")
 
     def test_blend_hair_stage_uses_configured_enhanced_phase_in_provenance(self) -> None:
         from hairport.config import load_config, set_config
@@ -311,15 +297,15 @@ class RuntimeContractTests(unittest.TestCase):
             pipeline = HairPortPipeline(preflight=False)
         self.assertEqual(pipeline.ctx.data_dir, expected)
 
-    def test_config_defaults_use_new_flame_asset_layout(self) -> None:
+    def test_config_defaults_use_pear_fitting_backend(self) -> None:
         from hairport.config import get_config
 
         cfg = get_config()
-        self.assertIn("assets/base_models/flame/parametric_models/generic_model.pkl", cfg.paths.flame_model_source)
-        self.assertIn("assets/base_models/flame/parametric_models/generic_model.pt", cfg.paths.flame_model_runtime)
-        self.assertIn("assets/base_models/flame/vertex_mappings/FLAME_masks.pkl", cfg.paths.flame_masks)
-        self.assertIn("assets/landmarks/flame/eyelids.pt", cfg.paths.flame_eyelids)
-        self.assertIn("assets/landmarks/flame/mediapipe_landmark_embedding.npz", cfg.paths.mediapipe_flame_embedding)
+        self.assertEqual(cfg.fitting.backend, "pear")
+        self.assertIn("modules/PEAR", cfg.fitting.pear_module)
+        self.assertEqual(cfg.fitting.pear_checkpoint, "ehm_model_stage1.pt")
+        self.assertTrue(cfg.fitting.matting)
+        self.assertTrue(cfg.baldify.persist_intermediates)
 
     def test_pipeline_stage_selection_rejects_unknown_only_and_skip(self) -> None:
         from hairport.pipeline import HairPortPipeline
@@ -383,6 +369,7 @@ class RuntimeContractTests(unittest.TestCase):
             )
         self.assertEqual(captured["image_size"], (640, 320))
 
+    @unittest.skipUnless(find_spec("roma"), "roma not installed")
     def test_landmark_stage_head_orientation_uses_cache_by_default(self) -> None:
         from hairport.stages.landmark_3d import Landmark3DStage
 
@@ -393,7 +380,7 @@ class RuntimeContractTests(unittest.TestCase):
             image_path.write_text("placeholder")
 
             with patch(
-                "hairport.core.flame_fitting.compute_head_orientation",
+                "hairport.fitting.orientation.compute_head_orientation",
                 return_value={"euler_angles_xyz_radians": [[0.1, 0.2, 0.3]]},
             ) as compute_orientation:
                 angles = Landmark3DStage._load_head_orientation(root, "person")
@@ -401,81 +388,63 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual(angles, [0.1, 0.2, 0.3])
         self.assertFalse(compute_orientation.call_args.kwargs["force"])
 
-    def test_preflight_requires_importable_sheap_for_flame_stages(self) -> None:
+    def test_preflight_requires_importable_ultralytics_for_fitting_stages(self) -> None:
         from hairport.config import load_config, set_config
         from hairport.preflight import validate_preflight
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            flame_root = root / "base_models" / "flame"
-            flame_model_dir = flame_root / "parametric_models"
-            flame_masks_dir = flame_root / "vertex_mappings"
+            pear_root = root / "PEAR"
+            smplx_dir = pear_root / "assets" / "SMPLX"
+            flame_dir = pear_root / "assets" / "FLAME" / "FLAME2020"
             landmark_dir = root / "landmarks" / "flame"
-            sheap_dir = root / "SHeaP"
-            embedding = root / "embedding.npz"
-            flame_model_dir.mkdir(parents=True)
-            flame_masks_dir.mkdir(parents=True)
+            smplx_dir.mkdir(parents=True)
+            flame_dir.mkdir(parents=True)
             landmark_dir.mkdir(parents=True)
-            sheap_dir.mkdir(parents=True)
-            (flame_model_dir / "generic_model.pt").write_text("model")
-            (flame_model_dir / "generic_model.pkl").write_text("pkl")
-            (flame_masks_dir / "FLAME_masks.pkl").write_text("mask")
-            (landmark_dir / "eyelids.pt").write_text("eyelids")
-            embedding.write_text("embed")
-            set_config(
-                load_config(
-                    overrides=[
-                        f"paths.flame_model_runtime={flame_model_dir / 'generic_model.pt'}",
-                        f"paths.flame_model_source={flame_model_dir / 'generic_model.pkl'}",
-                        f"paths.flame_masks={flame_masks_dir / 'FLAME_masks.pkl'}",
-                        f"paths.flame_eyelids={landmark_dir / 'eyelids.pt'}",
-                        f"paths.sheap_module={sheap_dir}",
-                        f"paths.mediapipe_flame_embedding={embedding}",
-                    ]
-                )
-            )
-            with patch("hairport.preflight.importlib.util.find_spec", return_value=None):
-                with self.assertRaisesRegex(FileNotFoundError, "importable Python package 'sheap'"):
-                    validate_preflight(["align_view"])
-
-    def test_preflight_converts_flame_model_from_pkl_when_pt_missing(self) -> None:
-        from hairport.config import load_config, set_config
-        from hairport.preflight import validate_preflight
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            flame_model_dir = root / "base_models" / "flame" / "parametric_models"
-            flame_masks_dir = root / "base_models" / "flame" / "vertex_mappings"
-            landmark_dir = root / "landmarks" / "flame"
-            sheap_dir = root / "SHeaP"
-            flame_model_dir.mkdir(parents=True)
-            flame_masks_dir.mkdir(parents=True)
-            landmark_dir.mkdir(parents=True)
-            sheap_dir.mkdir(parents=True)
-            source_path = flame_model_dir / "generic_model.pkl"
-            runtime_path = flame_model_dir / "generic_model.pt"
-            source_path.write_text("placeholder")
-            (flame_masks_dir / "FLAME_masks.pkl").write_text("mask")
-            (landmark_dir / "eyelids.pt").write_text("eyelids")
+            (smplx_dir / "SMPLX_NEUTRAL_2020.npz").write_text("smplx")
+            (smplx_dir / "flame_generic_model.pkl").write_text("flame")
+            (flame_dir / "generic_model.pkl").write_text("flame2020")
             (landmark_dir / "mediapipe_landmark_embedding.npz").write_text("embed")
             set_config(
                 load_config(
                     overrides=[
-                        f"paths.flame_model_source={source_path}",
-                        f"paths.flame_model_runtime={runtime_path}",
-                        f"paths.flame_masks={flame_masks_dir / 'FLAME_masks.pkl'}",
-                        f"paths.flame_eyelids={landmark_dir / 'eyelids.pt'}",
-                        f"paths.sheap_module={sheap_dir}",
+                        f"fitting.pear_module={pear_root}",
                         f"paths.mediapipe_flame_embedding={landmark_dir / 'mediapipe_landmark_embedding.npz'}",
                     ]
                 )
             )
-            with (
-                patch("hairport.preflight.importlib.util.find_spec", return_value=object()),
-                patch("hairport.preflight.ensure_flame_model_runtime", return_value=runtime_path) as ensure_runtime,
-            ):
-                validate_preflight(["align_view"])
-            ensure_runtime.assert_called_once_with(source_path, runtime_path)
+            # All asset files exist; only the python package is missing.
+            with patch("hairport.preflight.importlib.util.find_spec", return_value=None):
+                with self.assertRaisesRegex(FileNotFoundError, "ultralytics"):
+                    validate_preflight(["align_view"])
+
+    def test_preflight_passes_when_pear_assets_and_deps_present(self) -> None:
+        from hairport.config import load_config, set_config
+        from hairport.preflight import validate_preflight
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pear_root = root / "PEAR"
+            smplx_dir = pear_root / "assets" / "SMPLX"
+            flame_dir = pear_root / "assets" / "FLAME" / "FLAME2020"
+            landmark_dir = root / "landmarks" / "flame"
+            smplx_dir.mkdir(parents=True)
+            flame_dir.mkdir(parents=True)
+            landmark_dir.mkdir(parents=True)
+            (smplx_dir / "SMPLX_NEUTRAL_2020.npz").write_text("smplx")
+            (smplx_dir / "flame_generic_model.pkl").write_text("flame")
+            (flame_dir / "generic_model.pkl").write_text("flame2020")
+            (landmark_dir / "mediapipe_landmark_embedding.npz").write_text("embed")
+            set_config(
+                load_config(
+                    overrides=[
+                        f"fitting.pear_module={pear_root}",
+                        f"paths.mediapipe_flame_embedding={landmark_dir / 'mediapipe_landmark_embedding.npz'}",
+                    ]
+                )
+            )
+            with patch("hairport.preflight.importlib.util.find_spec", return_value=object()):
+                validate_preflight(["align_view"])  # must not raise
 
     def test_blend_hair_stage_counts_non_lift_outputs_as_completed(self) -> None:
         from hairport.config import load_config, set_config
@@ -542,7 +511,7 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertNotIn("git@github.com:", install_text)
         self.assertIn("https://github.com/deepmancer/CodeFormer.git", setup_text)
         self.assertIn("https://github.com/deepmancer/MV-Adapter.git", setup_text)
-        self.assertIn("https://github.com/deepmancer/SHeaP.git", setup_text)
+        # PEAR is a tracked git submodule (URL recorded in .gitmodules).
         self.assertIn("https://github.com/huggingface/diffusers.git", install_text)
         self.assertIn("https://github.com/huggingface/transformers.git", install_text)
         self.assertIn("https://github.com/deepmancer/easy_dwpose.git", install_text)

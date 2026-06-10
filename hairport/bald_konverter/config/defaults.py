@@ -13,12 +13,17 @@ LORA_FILENAME_W_SEG = "bald_konvertor_w_seg_000004900.safetensors"
 # --------------------------------------------------------------------------- #
 # Image sizes
 # --------------------------------------------------------------------------- #
-WO_SEG_IMAGE_SIZE = 768   # 2-panel mode (side-by-side → 1536×768)
-W_SEG_IMAGE_SIZE = 1024   # 4-panel mode (2×2 grid → 1024×1024)
+# wo_seg: per-PANEL size; the side-by-side FLUX input/output is 1536×768.
+WO_SEG_IMAGE_SIZE = 768
+# w_seg: full 2×2 GRID size; the FLUX input/output is 1024×1024, so each
+# panel is 512×512.
+W_SEG_IMAGE_SIZE = 1024
 
 # --------------------------------------------------------------------------- #
 # FLUX generation defaults
 # --------------------------------------------------------------------------- #
+# These must match the LoRA training configuration for both variants:
+# guidance 1.0, 35 steps, strength 1.0.
 DEFAULT_GUIDANCE_SCALE = 1.0
 DEFAULT_NUM_INFERENCE_STEPS = 35
 DEFAULT_STRENGTH = 1.0
@@ -46,7 +51,6 @@ PROMPT_W_SEG = (
 # --------------------------------------------------------------------------- #
 SAM3_MODEL_ID = "facebook/sam3"
 BEN2_MODEL_ID = "PramaLLC/BEN2"
-FACE_PARSER_MODEL_ID = "jonathandinu/face-parsing"
 
 # --------------------------------------------------------------------------- #
 # SAM mask extraction defaults

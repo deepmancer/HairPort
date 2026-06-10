@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 class BlendHairStage:
     """Warp, align, and Poisson-blend hair from source onto target.
 
-    Loads: BackgroundRemover, FacialLandmarkDetector, SAMMaskExtractor, FLAMEFitter.
+    Loads: BackgroundRemover, FacialLandmarkDetector, SAMMaskExtractor, fitting backend.
     """
 
     def run(
@@ -62,8 +62,8 @@ class BlendHairStage:
             CodeFormerEnhancer,
             FacialLandmarkDetector,
             SAMMaskExtractor,
-            FLAMEFitter,
         )
+        from hairport.fitting import get_fitting_backend
 
         cfg = get_config()
         if shape_provider is None:
@@ -93,7 +93,11 @@ class BlendHairStage:
         bald_versions = ["w_seg", "wo_seg"] if bald_version == "all" else [bald_version]
         summary = StageSummary(metadata={"seed": timestamp_seed, "bald_versions": bald_versions})
         output_phase = int(cfg.enhance_view.conditioning_phase)
-        unaware_target_image_folder = "image_outpainted" if data_dir.name.lower() == "celeba_reduced" else "image"
+        from hairport.data import resolve_unaware_target_folder
+
+        unaware_target_image_folder = resolve_unaware_target_folder(
+            data_dir, cfg.blend_hair.target_image_folder
+        )
 
         # Init models once
         bg_remover = BackgroundRemover()
@@ -106,7 +110,7 @@ class BlendHairStage:
             refine_landmarks=True, min_detection_confidence=0.5,
         )
         sam_extractor = SAMMaskExtractor(confidence_threshold=config.SAM_CONFIDENCE_THRESHOLD)
-        flame_fitter = FLAMEFitter()
+        backend = get_fitting_backend()
 
         try:
             for bv in bald_versions:
@@ -175,7 +179,7 @@ class BlendHairStage:
                             bg_remover=bg_remover,
                             landmark_detector=landmark_detector,
                             sam_extractor=sam_extractor,
-                            flame_fitter=flame_fitter,
+                            backend=backend,
                             force_recompute=True,
                         )
                         if not result:
@@ -206,11 +210,26 @@ class BlendHairStage:
                         logger.error(f"BlendHair error on {folder.name} ({bv}): {e}")
                         summary.add_failure(item_id, e)
         finally:
-            del bg_remover, codeformer_enhancer, landmark_detector, sam_extractor
+            for model in (
+                bg_remover, codeformer_enhancer, landmark_detector,
+                sam_extractor, backend,
+            ):
+                teardown = getattr(model, "teardown", None)
+                if callable(teardown):
+                    try:
+                        teardown()
+                    except Exception:
+                        logger.warning("Teardown failed for %r", model, exc_info=True)
+            del bg_remover, codeformer_enhancer, landmark_detector, sam_extractor, backend
             flush()
 
         logger.info(f"BlendHair complete: {summary.to_dict()}")
         return summary
+
+    def unload(self):
+        """Stage-API symmetry: models are scoped to run() and already torn
+        down in its ``finally`` block; this only flushes leftover cache."""
+        flush()
 
 
 def main(argv: list[str] | None = None):

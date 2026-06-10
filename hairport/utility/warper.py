@@ -1305,12 +1305,12 @@ def main(source_id: str, target_id: str, data_dir: str, visualize: bool = False,
     source_lmk_path = os.path.join(BALD_DATA_DIR, "lmk", source_id, "landmarks.npy")
     source_lmk_data = np.load(source_lmk_path, allow_pickle=True).item()
     
-    # Compute FLAME head mask for source via FLAMEFitter
-    from hairport.core.flame_fitting import FLAMEFitter
-    flame_fitter = FLAMEFitter()
-    source_flame_result = flame_fitter.fit_flame(source_image)
-    if source_flame_result is not None:
-        source_head_mask = Image.fromarray(source_flame_result[0]).convert('L')
+    # Compute head mask for source via the fitting backend (PEAR)
+    from hairport.fitting import get_fitting_backend
+    backend = get_fitting_backend()
+    source_flame_result = backend.fit(np.array(source_image.convert('RGB')))
+    if source_flame_result.head_mask is not None:
+        source_head_mask = Image.fromarray(source_flame_result.head_mask).convert('L')
     else:
         source_head_mask = Image.new('L', source_image.size, 0)
     
@@ -1327,10 +1327,10 @@ def main(source_id: str, target_id: str, data_dir: str, visualize: bool = False,
     target_lmk_path = os.path.join(VIEW_ALIGNED_DATA_DIR, "lmk", "refined_view_aligned", "landmarks.npy")
     target_lmk_data = np.load(target_lmk_path, allow_pickle=True).item()
     
-    # Compute FLAME head mask for target via FLAMEFitter
-    target_flame_result = flame_fitter.fit_flame(target_image)
-    if target_flame_result is not None:
-        target_head_mask = Image.fromarray(target_flame_result[0]).convert('L')
+    # Compute head mask for target via the fitting backend (PEAR)
+    target_flame_result = backend.fit(np.array(target_image.convert('RGB')))
+    if target_flame_result.head_mask is not None:
+        target_head_mask = Image.fromarray(target_flame_result.head_mask).convert('L')
     else:
         target_head_mask = Image.new('L', target_image.size, 0)
     

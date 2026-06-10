@@ -50,14 +50,18 @@ def load_base_pipeline(
 ) -> FluxInpaintPipeline:
     """Load the base FLUX inpainting pipeline (no LoRA weights attached).
 
-    This can be shared between :class:`BaldKonverter` and
-    :class:`BaldKonverterWithSeg` via :meth:`from_pipeline`.
+    Placement honours ``memory.flux_offload`` (full device placement by
+    default; component-level CPU offload when configured).  This can be
+    shared between :class:`BaldKonverter` and :class:`BaldKonverterWithSeg`
+    via :meth:`from_pipeline`.
     """
+    from hairport import memory
+
     torch.set_float32_matmul_precision("high")
     pipe = FluxInpaintPipeline.from_pretrained(
         base_model, revision=revision, torch_dtype=dtype
     )
-    pipe.to(device)
+    memory.apply_offload_mode(pipe, memory.flux_offload_mode(), device)
     logger.info("Base FLUX pipeline loaded on %s (dtype=%s)", device, dtype)
     return pipe
 

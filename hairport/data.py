@@ -24,6 +24,20 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def resolve_unaware_target_folder(data_dir: str | Path, setting: str = "auto") -> str:
+    """Resolve the target-image folder used for 3D-unaware blending/transfer.
+
+    *setting* comes from ``cfg.blend_hair.target_image_folder``:
+
+    * ``"auto"`` — legacy behavior: ``"image_outpainted"`` when the dataset
+      directory is named ``celeba_reduced``, otherwise ``"image"``.
+    * ``"image"`` / ``"image_outpainted"`` — explicit override.
+    """
+    if setting == "auto":
+        return "image_outpainted" if Path(data_dir).name.lower() == "celeba_reduced" else "image"
+    return setting
+
+
 class DatasetManager:
     """Centralised, type-safe path resolution for the HairPort data layout.
 
@@ -83,7 +97,7 @@ class DatasetManager:
         return self.root / "head_orientation" / identity_id
 
     def head_orientation_file(self, identity_id: str) -> Path:
-        """Head orientation JSON (computed via FLAMEFitter)."""
+        """Head orientation JSON (computed via the fitting backend)."""
         return self.head_orientation_dir(identity_id) / "head_orientation.json"
 
     # ------------------------------------------------------------------
@@ -101,6 +115,31 @@ class DatasetManager:
     def bald_outpainted_dir(self, bald_version: str = "w_seg") -> Path:
         """Outpainted bald images directory."""
         return self.bald_dir(bald_version) / "image_outpainted"
+
+    def bald_head_fit_dir(self, bald_version: str = "w_seg") -> Path:
+        """Directory of persisted head fits produced by the baldify stage."""
+        return self.bald_dir(bald_version) / "head_fit"
+
+    def bald_head_fit(self, identity_id: str, bald_version: str = "w_seg") -> Path:
+        """Persisted head fit (.pt, BodyFitResult schema) for an identity."""
+        return self.bald_head_fit_dir(bald_version) / f"{identity_id}.pt"
+
+    def bald_artifact_dir(self, kind: str, bald_version: str = "w_seg") -> Path:
+        """Directory for a baldify intermediate of a given *kind*.
+
+        ``kind`` ∈ {``plate``, ``bald_plate``, ``alpha``, ``mask_hair``,
+        ``mask_body``, ``mask_head``, ``mask_smplx``, ``flux_input``,
+        ``flux_input_w_seg``, ``foreground``, ``framing``, ``manifest``,
+        ``head_fit`` …}.
+        """
+        return self.bald_dir(bald_version) / kind
+
+    def bald_artifact(
+        self, identity_id: str, kind: str,
+        bald_version: str = "w_seg", ext: str = "png",
+    ) -> Path:
+        """Path to a baldify intermediate artifact for an identity."""
+        return self.bald_artifact_dir(kind, bald_version) / f"{identity_id}.{ext}"
 
     def bald_outpainted_file(self, identity_id: str, bald_version: str = "w_seg") -> Path:
         """Caption/outpainting-stage bald image for an identity."""
