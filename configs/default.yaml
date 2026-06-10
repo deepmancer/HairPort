@@ -123,8 +123,8 @@ baldify:
   w_seg_image_size: 1024
   # Head-centric square plate (non-square input support)
   framing:
-    crop_scale: 1.8           # plate side = crop_scale * max(head bbox dims)
-    border_pad_mode: reflect  # reflect | constant
+    crop_scale: 1.8             # plate side = crop_scale * max(head bbox dims)
+    border_pad_mode: replicate  # replicate | reflect | constant (used only when subject > image short side)
   # VFX composite back into the original frame (hair-removal matte; no color match)
   compositing:
     seam_poisson: true            # screened-Poisson seam pass

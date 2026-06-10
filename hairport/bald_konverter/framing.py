@@ -2,8 +2,10 @@
 
 A square *plate* is cropped around the head, the model runs on it, and the result
 is composited back into the full-resolution original (see :mod:`compositing`).
-The plate rect may extend past the image bounds: RGB is reflect-padded, masks are
-zero-padded, and ``paste`` writes back only the in-image portion.
+``plan_framing`` keeps the plate fully inside the image (no padding beyond the
+original pixels). ``Framing`` itself can still represent an out-of-bounds rect; if
+extracted, RGB is edge-replicated (never mirrored) and masks zero-padded, and
+``paste`` writes back only the in-image portion.
 """
 
 from __future__ import annotations
@@ -44,12 +46,14 @@ class Framing:
         bottom = max(0, self.py + self.side - self.orig_h)
         return left, top, right, bottom
 
-    def extract_native(self, image, border_mode: str = "reflect", fill: int = 0) -> np.ndarray:
-        """``side×side`` native plate; ``border_mode`` ``reflect`` (RGB) or ``constant`` (masks)."""
+    def extract_native(self, image, border_mode: str = "replicate", fill: int = 0) -> np.ndarray:
+        """``side×side`` native plate. ``border_mode``: ``replicate`` (edge, RGB
+        default — never mirrors a face), ``reflect``, or ``constant`` (masks)."""
         arr = _to_np(image)
         left, top, right, bottom = self._pads()
-        if border_mode == "reflect":
-            padded = cv2.copyMakeBorder(arr, top, bottom, left, right, cv2.BORDER_REFLECT_101)
+        modes = {"reflect": cv2.BORDER_REFLECT_101, "replicate": cv2.BORDER_REPLICATE}
+        if border_mode in modes:
+            padded = cv2.copyMakeBorder(arr, top, bottom, left, right, modes[border_mode])
         else:
             padded = cv2.copyMakeBorder(
                 arr, top, bottom, left, right, cv2.BORDER_CONSTANT, value=fill
@@ -117,8 +121,11 @@ def plan_framing(
 ) -> Framing:
     """Plan a square plate = ``crop_scale × max(dims)`` around the head (hair ∪ face bbox).
 
-    Falls back to the upper foreground silhouette, then the whole frame, if no
-    hair/face is found.
+    The plate is kept inside the image whenever the subject fits (capped to the
+    largest fitting square and clamped in-bounds), so non-square inputs incur no
+    mirror/edge padding; padding only happens when the subject itself is larger
+    than the image's short side. Falls back to the upper foreground silhouette,
+    then the whole frame, if no hair/face is found.
     """
     arr = _to_np(image)
     h, w = arr.shape[:2]
@@ -145,7 +152,13 @@ def plan_framing(
 
     bw, bh = x1 - x0, y1 - y0
     cx, cy = x0 + bw / 2.0, y0 + bh / 2.0
+    # Target a crop_scale margin around the head, but the plate must NEVER extend
+    # beyond the original image: cap the side to the largest square that fits
+    # (min(h, w)) and clamp the origin fully in-bounds. No padding is ever
+    # introduced — margin is whatever the image allows (full for normal framing,
+    # tight when the subject fills the short side).
     side = max(int(round(crop_scale * max(bw, bh))), 16)
-    px = int(round(cx - side / 2.0))
-    py = int(round(cy - side / 2.0))
+    side = min(side, h, w)
+    px = max(0, min(int(round(cx - side / 2.0)), w - side))
+    py = max(0, min(int(round(cy - side / 2.0)), h - side))
     return Framing(orig_h=h, orig_w=w, px=px, py=py, side=side, model_size=model_size)

@@ -243,7 +243,6 @@ class BaldKonverterPipeline:
     def _run_w_seg(
         self,
         image: Image.Image,
-        bald_wo_seg: Image.Image,
         hair_mask: np.ndarray,
         body_mask: np.ndarray,
         seed: int,
@@ -255,7 +254,8 @@ class BaldKonverterPipeline:
     ) -> tuple[Image.Image, Image.Image]:
         """Four-panel w_seg generation; returns (bald_plate, grid). Panels:
         top-left = SAM3 hair (red) over body∪head (green); top-right = SMPL-X
-        silhouette (green); bottom = original plate + wo_seg bald."""
+        silhouette (green); both bottom cells = the original plate (the model
+        inpaints the bottom-right into bald — no bald image is fed in)."""
         self._load_lora("w_seg")
         pipe = self._get_base_pipe()
 
@@ -286,9 +286,10 @@ class BaldKonverterPipeline:
         combined_seg = create_combined_seg_image(hair_mask, final_body, size=half)
         body_green = create_body_green_image(smplx_body_mask, size=half)
         orig_panel = resize_to_square(image, half)
-        bald_panel = resize_to_square(bald_wo_seg, half)
 
-        grid = create_four_panel(combined_seg, body_green, orig_panel, bald_panel)
+        # Both bottom cells are the original plate; the model inpaints the
+        # bottom-right into the bald result (no bald image is provided).
+        grid = create_four_panel(combined_seg, body_green, orig_panel, orig_panel)
         if grid.size != (size, size):
             grid = resize_to_square(grid, size)
         mask = make_bottom_right_mask(grid.size[0], grid.size[1])
@@ -392,7 +393,6 @@ class BaldKonverterPipeline:
 
             bald_plate_pil, grid = self._run_w_seg(
                 image=plate_pil,
-                bald_wo_seg=bald_plate_pil,
                 hair_mask=hair_plate,
                 body_mask=body_mask_plate,
                 head_mask=head_mask_plate,
@@ -408,7 +408,7 @@ class BaldKonverterPipeline:
         # grows the hair seed through the model-changed wisp band to avoid a
         # residual-hair halo.
         side = fr.side
-        orig_plate = fr.extract_native(img_np, border_mode="reflect")
+        orig_plate = fr.extract_native(img_np, border_mode=str(self.framing_cfg.border_pad_mode))
         bald_plate_native = cv2.resize(
             np.array(bald_plate_pil), (side, side), interpolation=cv2.INTER_LANCZOS4
         )

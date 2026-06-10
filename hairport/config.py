@@ -159,8 +159,9 @@ class FramingConfig:
 
     # Square plate side = crop_scale × max(head_bbox_w, head_bbox_h).
     crop_scale: float = 1.8
-    # Border fill for plate pixels outside the image: "reflect" | "constant".
-    border_pad_mode: str = "reflect"
+    # Border fill for plate pixels outside the image (only when the subject
+    # exceeds the image's short side): "replicate" | "reflect" | "constant".
+    border_pad_mode: str = "replicate"
 
 
 @dataclass

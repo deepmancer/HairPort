@@ -108,8 +108,12 @@ the **same-dimensioned original with only the head changed**:
 
 1. **Preprocess** the original (BEN2 foreground + SAM3 hair) at full resolution.
 2. **Framing** (`framing.py`) — extract a *head-centric square plate* (face box ∪
-   hair box, scaled by `baldify.framing.crop_scale`), reflect-padded at borders.
-   The model runs on this plate; `Framing` stores the exact extract/paste maps.
+   hair box, scaled by `baldify.framing.crop_scale`). The plate **never extends
+   beyond the original pixels**: the side is capped to the largest square that
+   fits (`min(h, w)`) and the origin is clamped in-bounds, so no padding is
+   introduced (margin is whatever the image allows; for subjects that fill the
+   short side the crop is tight). The model runs on this plate; `Framing` stores
+   the exact extract/paste maps.
 3. **Composite** (`compositing.py`) the bald plate back into the original at native
    resolution. The bald plate is composited **as-is** (no color matching — the
    model's direct output already matches the input). The matte is built for hair
@@ -144,8 +148,10 @@ access. The model-core stages below run on the **plate**:
 - Assembles a 2×2 grid:
   - **top-left** — SAM3 hair (red) over the bald body silhouette (green)
   - **top-right** — the **SMPL-X full-mesh silhouette** (green): bald seg target
-  - **bottom-left** — original image; **bottom-right** — inpainted bald result
-- FLUX inpaints the bottom-right quadrant guided by the segmentation context
+  - **bottom-left** & **bottom-right** — both the **original image** (no bald
+    image is fed in)
+- FLUX inpaints the bottom-right quadrant into the bald result, guided by the
+  segmentation context and the original reference in the other cells
 - Higher quality than wo_seg alone
 
 ## Modes

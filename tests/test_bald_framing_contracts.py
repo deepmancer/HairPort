@@ -32,6 +32,31 @@ class FramingContractTests(unittest.TestCase):
         # Pasting the unmodified plate reproduces the original exactly.
         self.assertTrue(np.array_equal(fr.paste(img, plate), img))
 
+    def test_plate_never_extends_beyond_original_pixels(self) -> None:
+        # Hard constraint: the square plate must always lie fully inside the image,
+        # so no padding (mirror or edge) is ever introduced — regardless of how the
+        # subject fills a non-square frame.
+        import numpy as np
+        from hairport.bald_konverter.framing import plan_framing
+
+        cases = [
+            ((941, 1672, 3), (295, 2, 938, 938)),    # landscape, head fills height
+            ((1672, 941, 3), (60, 400, 820, 900)),   # portrait, large subject
+            ((941, 1672, 3), (700, 300, 200, 220)),  # small head, off-centre
+        ]
+        for shape, face_bbox in cases:
+            img = self._rng().integers(0, 255, shape, dtype=np.uint8)
+            h, w = shape[:2]
+            fr = plan_framing(img, hair_mask=None, face_bbox=face_bbox,
+                              crop_scale=1.8, model_size=768)
+            self.assertEqual(fr.side, fr.extract_native(img).shape[0])
+            self.assertLessEqual(fr.side, min(h, w))            # fits the short side
+            self.assertGreaterEqual(fr.px, 0)
+            self.assertGreaterEqual(fr.py, 0)
+            self.assertLessEqual(fr.px + fr.side, w)
+            self.assertLessEqual(fr.py + fr.side, h)
+            self.assertEqual(fr._pads(), (0, 0, 0, 0))          # never beyond bounds
+
     def test_plate_near_border_reflect_pads_and_pastes_identity(self) -> None:
         import numpy as np
         from hairport.bald_konverter.framing import Framing
