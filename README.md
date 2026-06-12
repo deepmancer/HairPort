@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://arxiv.org/abs/2606.12562"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-2606.12562-b31b1b?style=for-the-badge"></a>
   <a href="https://doi.org/10.1145/3799902.3811046"><img alt="Paper DOI" src="https://img.shields.io/badge/DOI-10.1145%2F3799902.3811046-2f6f9f?style=for-the-badge"></a>
   <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/"><img alt="License: CC BY-NC-ND 4.0" src="https://img.shields.io/badge/License-CC%20BY--NC--ND%204.0-dc6f35?style=for-the-badge"></a>
   <a href="https://deepmancer.github.io/HairPort/"><img alt="Project page" src="https://img.shields.io/badge/Project%20Page-live-2ea44f?style=for-the-badge"></a>
@@ -23,6 +24,7 @@ HairPort transfers a reference hairstyle onto a source face while explicitly han
 
 ## News
 
+- **June 2026:** HairPort preprint is now available on arXiv: [arXiv:2606.12562](https://arxiv.org/abs/2606.12562).
 - **May 2026:** ACM assigned the HairPort DOI: [10.1145/3799902.3811046](https://doi.org/10.1145/3799902.3811046).
 - **May 2026:** HairPort was accepted to **SIGGRAPH Conference Papers '26**.
 - **May 2026:** Launched the [HairPort project page](https://deepmancer.github.io/HairPort/).
@@ -523,7 +525,7 @@ Please refer to the respective projects for their licenses, model terms, and cit
 
 If you use HairPort in your research, please cite:
 
-Publication details: SIGGRAPH Conference Papers '26, July 19--23, 2026, Los Angeles, CA, USA. DOI: [10.1145/3799902.3811046](https://doi.org/10.1145/3799902.3811046). ACM ISBN: `979-8-4007-2554-8/2026/07`.
+Publication details: SIGGRAPH Conference Papers '26, July 19--23, 2026, Los Angeles, CA, USA. DOI: [10.1145/3799902.3811046](https://doi.org/10.1145/3799902.3811046). ACM ISBN: `979-8-4007-2554-8/2026/07`. Preprint: [arXiv:2606.12562](https://arxiv.org/abs/2606.12562).
 
 ```bibtex
 @inproceedings{heidari2026hairport,
