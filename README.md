@@ -5,7 +5,7 @@
   <br>
   <strong>SIGGRAPH Conference Papers '26</strong>
   <br>
-  A. Heidari, A. Alimohammadi, W. Michel Pinto Lira, A. Bar-Lev, and A. Mahdavi-Amiri
+  A. Heidari, A. Alimohammadi, and A. Mahdavi-Amiri
 </p>
 
 <p align="center">
