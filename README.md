@@ -530,7 +530,7 @@ Publication details: SIGGRAPH Conference Papers '26, July 19--23, 2026, Los Ange
 ```bibtex
 @inproceedings{heidari2026hairport,
   title     = {HairPort: In-context 3D-aware Hair Import and Transfer for Images},
-  author    = {A. Heidari and A. Alimohammadi and W. Michel Pinto Lira and A. Bar-Lev and A. Mahdavi-Amiri},
+  author    = {A. Heidari and A. Alimohammadi and A. Mahdavi-Amiri},
   booktitle = {Special Interest Group on Computer Graphics and Interactive Techniques Conference Conference Papers (SIGGRAPH Conference Papers '26)},
   year      = {2026},
   isbn      = {979-8-4007-2554-8/2026/07},
